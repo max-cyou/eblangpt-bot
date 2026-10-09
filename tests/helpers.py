@@ -63,6 +63,8 @@ class BotTestMixin:
         self.settings = patch.multiple(
             config, DATABASE_PATH=Path(self.directory.name) / 'state.sqlite3',
             GROUP_RANDOM_REPLY_MIN=100, GROUP_RANDOM_REPLY_MAX=100,
+            START_IMAGE_PATH=config.PROJECT_ROOT / 'assets/eblan.png',
+            GROUP_WELCOME_IMAGE_PATH=config.PROJECT_ROOT / 'assets/eblan-group.png',
         )
         self.settings.start()
         initialize_database(config.DATABASE_PATH)

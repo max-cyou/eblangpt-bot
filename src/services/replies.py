@@ -1,4 +1,5 @@
 import logging
+from contextlib import nullcontext
 
 import config
 from database import increment_counter
@@ -13,10 +14,10 @@ from services.telegram import finish_status, show_status, update_status
 logger = logging.getLogger(__name__)
 
 
-async def answer_message(bot, session, message, text, status=None):
+async def answer_message(bot, session, message, text, status=None, lock_held=False):
     remember_message(message)
     thread = message.message_thread_id
-    async with get_chat_lock(message.chat.id, thread):
+    async with (nullcontext() if lock_held else get_chat_lock(message.chat.id, thread)):
         history = get_history(message.chat.id, thread)
         increment_counter(config.DATABASE_PATH, 'generations')
         if status is None:

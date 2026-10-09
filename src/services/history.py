@@ -1,9 +1,10 @@
 import asyncio
+from weakref import WeakValueDictionary
 
 import config
 from database import append_history, delete_history, read_history
 
-chat_locks = {}
+chat_locks = WeakValueDictionary()
 
 
 def get_chat_lock(chat_id, thread_id=None):

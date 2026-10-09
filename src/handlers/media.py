@@ -1,4 +1,5 @@
 import logging
+from contextlib import nullcontext
 
 import config
 from database import increment_counter
@@ -14,7 +15,12 @@ from services.telegram import AUDIO_STATUS_TEXT, IMAGE_STATUS_TEXT, finish_statu
 logger = logging.getLogger(__name__)
 
 
-async def answer_media(bot, session, message, question='', source=None):
+async def answer_media(bot, session, message, question='', source=None, lock_held=False):
+    async with (nullcontext() if lock_held else get_chat_lock(message.chat.id, message.message_thread_id)):
+        await answer_media_locked(bot, session, message, question, source)
+
+
+async def answer_media_locked(bot, session, message, question='', source=None):
     source = source or message
     kind = attachment_kind(source)
     remember_message(message)
@@ -32,14 +38,14 @@ async def answer_media(bot, session, message, question='', source=None):
             text += f'\nтекст связанного сообщения:\n{reference_text}'
     if message.chat.type != 'private':
         text = format_group_message(message, text)
-    await answer_message(bot, session, message, text, status)
+    await answer_message(bot, session, message, text, status, lock_held=True)
 
 
 def register_media_handlers(bot, session):
     async def private_media(message):
         await answer_media(bot, session, message, get_message_content_text(message))
 
-    async def group_media(message):
+    async def group_media_locked(message):
         remember_message(message)
         if not message.from_user or message.from_user.is_bot:
             return
@@ -49,7 +55,7 @@ def register_media_handlers(bot, session):
         if triggered or random_due:
             if random_due and not triggered:
                 increment_counter(config.DATABASE_PATH, 'group_random_replies')
-            await answer_media(bot, session, message, await strip_bot_mention(bot, caption))
+            await answer_media(bot, session, message, await strip_bot_mention(bot, caption), lock_held=True)
             return
         kind = attachment_kind(message)
         if kind == 'image':
@@ -61,10 +67,13 @@ def register_media_handlers(bot, session):
                 logger.warning('Passive attachment failed: %s', failure_details(error))
                 return
             if kind == 'audio' and await group_is_triggered(bot, message, transcript):
-                await answer_message(bot, session, message, format_group_message(message, text))
+                await answer_message(bot, session, message, format_group_message(message, text), lock_held=True)
                 return
+        save_message(message.chat.id, format_group_message(message, text), message.message_thread_id)
+
+    async def group_media(message):
         async with get_chat_lock(message.chat.id, message.message_thread_id):
-            save_message(message.chat.id, format_group_message(message, text), message.message_thread_id)
+            await group_media_locked(message)
 
     kinds = ['photo', 'voice', 'audio', 'document', 'location']
     bot.register_message_handler(private_media, content_types=kinds, chat_types=['private'])

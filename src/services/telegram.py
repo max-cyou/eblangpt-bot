@@ -1,6 +1,7 @@
 import asyncio
 import logging
 
+import aiohttp
 from telebot import types
 from telebot.asyncio_helper import ApiException, ApiTelegramException
 
@@ -8,6 +9,7 @@ from services.errors import failure_details
 
 
 logger = logging.getLogger(__name__)
+TELEGRAM_ERRORS = (ApiException, aiohttp.ClientError, TimeoutError)
 STREAM_STATUS_TEXT = '😈 бжжж ответ calculating💪'
 IMAGE_STATUS_TEXT = 'смотрю пикчу😈 погоди вась'
 AUDIO_STATUS_TEXT = 'слушаю войс😈 погоди вась'
@@ -78,10 +80,10 @@ async def show_status(bot, message, text=STREAM_STATUS_TEXT):
                 message_thread_id=message.message_thread_id,
                 rich_message=types.InputRichMessage(markdown=text),
             )
-        except ApiException:
+        except TELEGRAM_ERRORS:
             try:
                 await bot.send_chat_action(message.chat.id, 'typing', message_thread_id=message.message_thread_id)
-            except ApiException:
+            except TELEGRAM_ERRORS:
                 pass
         return None
     return await send_text(bot, message, text)
@@ -97,7 +99,7 @@ async def update_status(bot, message, status, text):
             )
         elif status:
             await edit_text(bot, text[:2000], chat_id=message.chat.id, message_id=status.message_id)
-    except ApiException as error:
+    except TELEGRAM_ERRORS as error:
         logger.debug('Stream update failed: %s', failure_details(error))
 
 

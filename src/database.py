@@ -50,6 +50,8 @@ def initialize_database(path):
                 ON history(chat_id, thread_id, id);
                 '''
             )
+    # The database stores chat messages and should be private to its owner.
+    Path(path).chmod(0o600)
 
 
 def remember_chat(path, chat_id, chat_type, username=None, title=None):

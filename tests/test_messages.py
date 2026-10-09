@@ -52,6 +52,26 @@ class MessageTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
         await self.bot.process_new_messages([make_message('поясни', reply_to_message=make_message('reference text').json)])
         self.assertIn('reference text', self.session.calls[-1][1]['json']['messages'][-1]['content'])
 
+    async def test_clear_waits_for_generation(self):
+        entered, release = asyncio.Event(), asyncio.Event()
+        response = Response()
+
+        async def delayed_json():
+            entered.set()
+            await release.wait()
+            return {'choices': [{'message': {'content': 'delayed answer'}}]}
+
+        response.json = delayed_json
+        self.session.responses = [response]
+        generation = asyncio.create_task(self.bot.process_new_messages([make_message('slow')]))
+        await entered.wait()
+        clearing = asyncio.create_task(self.bot.process_new_messages([make_message('/clear')]))
+        await asyncio.sleep(0)
+        self.assertFalse(clearing.done())
+        release.set()
+        await asyncio.gather(generation, clearing)
+        self.assertEqual(get_history(1), [])
+
 
 class StreamTests(unittest.IsolatedAsyncioTestCase):
     async def test_sse_and_json_compatibility(self):

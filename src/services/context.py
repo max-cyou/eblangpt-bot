@@ -1,4 +1,5 @@
 import os
+from telebot import types
 
 def format_group_message(message, text):
     sender = message.from_user
@@ -103,11 +104,14 @@ def get_image_attachment(message_like):
     if message_like is None:
         return None
 
-    photos = getattr(message_like, 'photo', None)
+    photos = get_object_field(message_like, 'photo')
     if photos:
-        return photos[-1]
+        photo = photos[-1]
+        return types.PhotoSize.de_json(photo) if isinstance(photo, dict) else photo
 
-    document = getattr(message_like, 'document', None)
+    document = get_object_field(message_like, 'document')
+    if isinstance(document, dict):
+        document = types.Document.de_json(document)
     if (
         document is not None
         and (document.mime_type or '').casefold().startswith('image/')
@@ -121,15 +125,17 @@ def get_audio_attachment(message_like):
     if message_like is None:
         return None
 
-    voice = getattr(message_like, 'voice', None)
+    voice = get_object_field(message_like, 'voice')
     if voice is not None:
-        return voice
+        return types.Voice.de_json(voice) if isinstance(voice, dict) else voice
 
-    audio = getattr(message_like, 'audio', None)
+    audio = get_object_field(message_like, 'audio')
     if audio is not None:
-        return audio
+        return types.Audio.de_json(audio) if isinstance(audio, dict) else audio
 
-    document = getattr(message_like, 'document', None)
+    document = get_object_field(message_like, 'document')
+    if isinstance(document, dict):
+        document = types.Document.de_json(document)
     if (
         document is not None
         and (document.mime_type or '').casefold().startswith('audio/')

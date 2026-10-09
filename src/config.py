@@ -48,6 +48,17 @@ TEXT_FILE_MAX_BYTES = positive_int('TEXT_FILE_MAX_BYTES', 512 * 1024)
 TEXT_FILE_MAX_CHARS = positive_int('TEXT_FILE_MAX_CHARS', 24000)
 IMAGE_MAX_BYTES = positive_int('IMAGE_MAX_BYTES', 10 * 1024 * 1024)
 AUDIO_MAX_BYTES = positive_int('AUDIO_MAX_BYTES', 20 * 1024 * 1024)
+ADMIN_USER_ID = int(os.getenv('ADMIN_USER_ID', '') or '0')
+ADMIN_USERNAME = os.getenv('ADMIN_USERNAME', '').strip().lstrip('@').casefold()
+
+
+def project_path(name, default):
+    path = Path(os.getenv(name, default))
+    return path if path.is_absolute() else PROJECT_ROOT / path
+
+
+START_IMAGE_PATH = project_path('START_IMAGE_PATH', 'assets/eblan.png')
+GROUP_WELCOME_IMAGE_PATH = project_path('GROUP_WELCOME_IMAGE_PATH', 'assets/eblan-group.png')
 
 if not BOT_TOKEN.strip():
     raise ValueError("Error: Bot token not found.")

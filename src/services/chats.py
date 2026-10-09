@@ -1,6 +1,7 @@
 import asyncio
 import random
 import re
+from weakref import WeakKeyDictionary
 
 import config
 from database import consume_group_random_reply, remember_chat
@@ -8,8 +9,8 @@ from services.context import full_name
 
 
 GROUP_TRIGGER_PATTERN = re.compile(r'^\s*(?:вась|уась|еблан|гпт|вася)', re.IGNORECASE)
-bot_users = {}
-bot_user_locks = {}
+bot_users = WeakKeyDictionary()
+bot_user_locks = WeakKeyDictionary()
 
 
 async def get_bot_user(bot):

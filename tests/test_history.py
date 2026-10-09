@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import config
-from database import initialize_database
+from database import initialize_database, consume_group_random_reply
 from services.history import clear_history, get_history, save_exchange
 
 
@@ -55,3 +55,9 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual([item['role'] for item in history], ['user', 'assistant'])
         self.assertLessEqual(sum(len(item['content']) for item in history), 100)
         self.assertTrue(all(item['content'] for item in history))
+
+    def test_random_interval_is_saved_in_database(self):
+        self.assertFalse(consume_group_random_reply(self.path, -1, 3))
+        initialize_database(self.path)
+        self.assertFalse(consume_group_random_reply(self.path, -1, 3))
+        self.assertTrue(consume_group_random_reply(self.path, -1, 3))

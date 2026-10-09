@@ -6,7 +6,10 @@ from telebot.async_telebot import AsyncTeleBot
 
 import config
 from database import initialize_database
-from handlers.commands import register_command_handlers
+from handlers.commands import register_command_handlers, register_command_menu
+from handlers.admin import register_admin_handlers
+from handlers.events import register_event_handlers
+from handlers.guest import register_guest_handlers
 from handlers.groups import register_group_handlers
 from handlers.messages import register_message_handlers
 from handlers.media import register_media_handlers
@@ -21,9 +24,13 @@ async def main():
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             register_command_handlers(bot)
+            register_admin_handlers(bot)
+            register_event_handlers(bot)
             register_message_handlers(bot, session)
             register_group_handlers(bot, session)
             register_media_handlers(bot, session)
+            register_guest_handlers(bot, session)
+            await register_command_menu(bot)
 
             logging.info('Bot starting...')
 
