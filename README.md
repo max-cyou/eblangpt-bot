@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/repo/logo.png" alt="eblangpt-bot logo" width="320">
+</p>
+
 # eblangpt-bot
 
 Telegram-бот на AsyncTeleBot (pyTelegramBotAPI). Хендлеры отделены от запросов к моделям, хранения истории и отправки сообщений. Системный промпт находится в `src/prompt.py`.
