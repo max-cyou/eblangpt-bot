@@ -6,6 +6,8 @@
 
 Лучший в мире Telegram-бот на AsyncTeleBot (pyTelegramBotAPI).
 
+Доступен как [@EblanGPTrobot](https://t.me/eblangptrobot).
+
 ## Запуск
 
 Зависим от Python >= 3.11, для запуска:

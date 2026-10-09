@@ -42,7 +42,7 @@ async def start_handler(message, bot):
         'я умею читать писать и отвечать в guest режиме\n'
         'читать сообщения в группах файлы и геолокацию\n'
         'смотреть пикчи и слушать голосовые\n\n'
-        '/clear — очистить контекст', keyboard,
+        '/clear — очистить контекст\n\nа так же мой сурс - https://github.com/max-cyou/eblangpt-bot!', keyboard,
     )
 
 
