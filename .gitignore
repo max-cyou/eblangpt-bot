@@ -205,6 +205,12 @@ cython_debug/
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
 
+# Local bot state
+data/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+
 # Ruff stuff:
 .ruff_cache/
 
