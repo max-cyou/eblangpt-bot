@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 import aiohttp
 from telebot.async_telebot import AsyncTeleBot
@@ -6,6 +7,7 @@ from telebot.async_telebot import AsyncTeleBot
 import config
 from database import initialize_database
 from handlers.commands import register_command_handlers
+from handlers.groups import register_group_handlers
 from handlers.messages import register_message_handlers
 
 
@@ -15,13 +17,18 @@ async def main():
 
     timeout = aiohttp.ClientTimeout(total=60)
 
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        register_command_handlers(bot)
-        register_message_handlers(bot, session)
+    try:
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            register_command_handlers(bot)
+            register_message_handlers(bot, session)
+            register_group_handlers(bot, session)
 
-        print("Bot starting...")
+            logging.info('Bot starting...')
 
-        await bot.infinity_polling()
+            await bot.infinity_polling(allowed_updates=['message', 'guest_message', 'my_chat_member'])
+    finally:
+        await bot.close_session()
 
 if __name__ == '__main__':
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(name)s: %(message)s')
     asyncio.run(main())

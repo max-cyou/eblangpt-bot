@@ -1,28 +1,25 @@
-import asyncio
+import config
+from database import increment_counter
+from services.context import get_message_content_text
+from services.replies import answer_message
 
-import aiohttp
 
-from services.ai import request_answer
-from services.history import get_chat_lock, get_history, save_exchange
+def private_prompt(message):
+    text = get_message_content_text(message)
+    reference = get_message_content_text(message.reply_to_message)
+    if reference:
+        return f'сообщение на которое ответил пользователь:\n{reference}\n\nзапрос пользователя:\n{text}'
+    return text
 
 
 def register_message_handlers(bot, session):
-    async def message_handler(message, bot):
-        async with get_chat_lock(message.chat.id):
-            history = get_history(message.chat.id)
-            try:
-                answer = await request_answer(message.text, session, history)
-            except asyncio.TimeoutError:
-                await bot.reply_to(message, 'слыш😈 ты че там промямлил💪 не слышно тебя')
-                return
-            except aiohttp.ClientResponseError:
-                await bot.reply_to(message, 'э😈 сервер отвалился💪 попробуй позже')
-                return
+    async def message_handler(message):
+        text = private_prompt(message)
+        if not text.strip():
+            return
+        increment_counter(config.DATABASE_PATH, 'private_text_messages')
+        await answer_message(bot, session, message, text)
 
-            await bot.reply_to(message, answer)
-            save_exchange(message.chat.id, message.text, answer)
-
-    bot.register_message_handler(message_handler,
-        content_types=['text'],
-        pass_bot=True,
+    bot.register_message_handler(
+        message_handler, content_types=['text', 'rich_message'], chat_types=['private'],
     )

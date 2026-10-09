@@ -6,8 +6,8 @@ async def start_handler(message, bot):
 
 
 async def clear_handler(message, bot):
-    async with get_chat_lock(message.chat.id):
-        clear_history(message.chat.id)
+    async with get_chat_lock(message.chat.id, message.message_thread_id):
+        clear_history(message.chat.id, message.message_thread_id)
         await bot.reply_to(message, 'контекст очищен✅ вась')
 
 
