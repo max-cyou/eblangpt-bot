@@ -24,4 +24,4 @@ if __name__ == '__main__':
     if BOT_TOKEN.strip():
         asyncio.run(main())
     else:
-        raise ValueError("Error! Bot token not found.")
+        raise ValueError("Error: Bot token not found.")
