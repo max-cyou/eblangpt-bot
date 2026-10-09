@@ -1,0 +1,28 @@
+[Unit]
+Description=EblanGPT Telegram bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+NotifyAccess=main
+User=eblangpt
+Group=eblangpt
+WorkingDirectory=/opt/eblangpt-bot/current
+EnvironmentFile=/etc/eblangpt.env
+Environment=PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/eblangpt-bot/current/.venv/bin/python /opt/eblangpt-bot/current/src/main.py
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=90
+TimeoutStopSec=30
+KillSignal=SIGINT
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/eblangpt
+
+[Install]
+WantedBy=multi-user.target

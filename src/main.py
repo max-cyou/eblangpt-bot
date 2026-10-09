@@ -13,6 +13,7 @@ from handlers.guest import register_guest_handlers
 from handlers.groups import register_group_handlers
 from handlers.messages import register_message_handlers
 from handlers.media import register_media_handlers
+from services.health import notify_ready
 
 
 async def main():
@@ -33,6 +34,7 @@ async def main():
             await register_command_menu(bot)
 
             logging.info('Bot starting...')
+            notify_ready()
 
             await bot.infinity_polling(allowed_updates=['message', 'guest_message', 'my_chat_member'])
     finally:

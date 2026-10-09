@@ -1,0 +1,60 @@
+#!/bin/bash
+set -Eeuo pipefail
+umask 0027
+
+if [[ "$#" != 1 || ! "$1" =~ ^[0-9a-f]{40}$ ]]; then
+    echo 'Usage: deploy-eblangpt <40-character commit SHA>' >&2
+    exit 2
+fi
+sha="$1"
+release_root=/opt/eblangpt-bot
+incoming=/var/lib/eblangpt-deploy/incoming
+archive="$incoming/$sha.tar.gz"
+service=eblangpt.service
+
+exec 9>/run/lock/eblangpt-deploy.lock
+flock -w 600 9
+[[ -f "$archive" ]] || { echo 'Release archive not uploaded' >&2; exit 1; }
+[[ -s /etc/eblangpt.env ]] || { echo 'Server environment is missing' >&2; exit 1; }
+release="$release_root/releases/$sha-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+install -d -o eblangpt-deploy -g eblangpt -m 0750 "$release"
+runuser -u eblangpt-deploy -- python3 /usr/local/lib/eblangpt/extract_release.py "$archive" "$release"
+runuser -u eblangpt-deploy -- python3 -m venv "$release/.venv"
+runuser -u eblangpt-deploy -- "$release/.venv/bin/python" -m pip install --disable-pip-version-check -q -r "$release/requirements.txt"
+(
+    cd "$release"
+    runuser -u eblangpt-deploy -- "$release/.venv/bin/python" -m unittest discover -v
+)
+previous="$(readlink -f "$release_root/current" || true)"
+if [[ -f /var/lib/eblangpt/eblangpt.sqlite3 ]]; then
+    backup="/var/lib/eblangpt/backups/$(date -u +%Y%m%dT%H%M%SZ)-$sha.sqlite3"
+    python3 - "$backup" <<'PY'
+import sqlite3
+import sys
+from contextlib import closing
+with closing(sqlite3.connect('file:/var/lib/eblangpt/eblangpt.sqlite3?mode=ro', uri=True)) as source:
+    with closing(sqlite3.connect(sys.argv[1])) as destination:
+        source.backup(destination)
+PY
+    chmod 0600 "$backup"
+fi
+ln -sfn "$release" "$release_root/.current-next"
+mv -Tf "$release_root/.current-next" "$release_root/current"
+if systemctl restart "$service"; then
+    sleep 5
+    if systemctl is-active --quiet "$service"; then
+        echo "Deployed $sha"
+        exit 0
+    fi
+fi
+# A failed start must not leave the broken version active.
+systemctl stop "$service"
+if [[ -n "$previous" && -d "$previous" ]]; then
+    ln -sfn "$previous" "$release_root/.current-next"
+    mv -Tf "$release_root/.current-next" "$release_root/current"
+    systemctl start "$service"
+    echo 'Deployment failed; previous release restored' >&2
+else
+    echo 'First deployment failed; service remains stopped' >&2
+fi
+exit 1
