@@ -32,6 +32,23 @@ GROUP_RANDOM_REPLY_MAX = positive_int('GROUP_RANDOM_REPLY_MAX', 20)
 if GROUP_RANDOM_REPLY_MIN > GROUP_RANDOM_REPLY_MAX:
     raise ValueError('GROUP_RANDOM_REPLY_MIN must not exceed GROUP_RANDOM_REPLY_MAX')
 
+OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY', '').strip()
+OPENROUTER_CHAT_URL = os.getenv('OPENROUTER_CHAT_URL', 'https://openrouter.ai/api/v1/chat/completions').strip()
+OPENROUTER_VISION_MODEL = os.getenv('OPENROUTER_VISION_MODEL', 'inclusionai/ling-3.0-flash-vl:free').strip()
+OPENROUTER_VISION_FALLBACK_MODELS = tuple(
+    item.strip() for item in os.getenv(
+        'OPENROUTER_VISION_FALLBACK_MODELS',
+        'google/gemma-4-26b-a4b-it:free,nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
+    ).split(',') if item.strip()
+)
+GROQ_API_KEY = os.getenv('GROQ_API_KEY', '').strip()
+GROQ_TRANSCRIPT_URL = os.getenv('GROQ_TRANSCRIPT_URL', 'https://api.groq.com/openai/v1/audio/transcriptions').strip()
+GROQ_TRANSCRIPT_MODEL = os.getenv('GROQ_TRANSCRIPT_MODEL', 'whisper-large-v3-turbo').strip()
+TEXT_FILE_MAX_BYTES = positive_int('TEXT_FILE_MAX_BYTES', 512 * 1024)
+TEXT_FILE_MAX_CHARS = positive_int('TEXT_FILE_MAX_CHARS', 24000)
+IMAGE_MAX_BYTES = positive_int('IMAGE_MAX_BYTES', 10 * 1024 * 1024)
+AUDIO_MAX_BYTES = positive_int('AUDIO_MAX_BYTES', 20 * 1024 * 1024)
+
 if not BOT_TOKEN.strip():
     raise ValueError("Error: Bot token not found.")
 if any(not v.strip() for v in (AI_API_KEY, AI_API_URL, AI_MODEL)):

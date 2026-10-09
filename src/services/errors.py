@@ -9,6 +9,16 @@ REQUEST_ERRORS = (aiohttp.ClientError, asyncio.TimeoutError, ValueError, Runtime
 
 
 def fallback_text(error, kind='ai'):
+    specific = {
+        'image_too_large': 'пикча😈 слишком большая💪 отправь поменьше',
+        'audio_too_large': 'войс😈 слишком большой💪 отправь покороче',
+        'document_too_large': 'файл😈 слишком большой💪 отправь поменьше',
+        'document_not_text': 'вась😈 этот формат не читаю💪 отправь текстовый файл',
+        'vision_not_configured': 'пикчи😈 пока не настроены💪 напиши текстом',
+        'audio_not_configured': 'войсы😈 пока не настроены💪 напиши текстом',
+    }
+    if isinstance(error, (ValueError, RuntimeError)) and str(error) in specific:
+        return specific[str(error)]
     if isinstance(error, asyncio.TimeoutError):
         return 'слыш😈 модель задумалась💪 попробуй чуть позже'
     if isinstance(error, aiohttp.ClientResponseError):

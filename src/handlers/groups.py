@@ -4,6 +4,8 @@ from services.chats import group_is_triggered, random_reply_due, remember_messag
 from services.context import format_group_message, get_message_content_text
 from services.history import get_chat_lock, save_message
 from services.replies import answer_message
+from handlers.media import answer_media
+from services.media import attachment_kind
 
 
 async def remember_group_text(message, text):
@@ -29,6 +31,10 @@ def register_group_handlers(bot, session):
         if random_due and not triggered:
             increment_counter(config.DATABASE_PATH, 'group_random_replies')
         text = await strip_bot_mention(bot, text)
+        reference = message.reply_to_message
+        if reference and attachment_kind(reference):
+            await answer_media(bot, session, message, text, reference)
+            return
         await answer_message(bot, session, message, format_group_message(message, text or 'эй'))
 
     bot.register_message_handler(

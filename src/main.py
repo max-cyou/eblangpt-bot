@@ -9,6 +9,7 @@ from database import initialize_database
 from handlers.commands import register_command_handlers
 from handlers.groups import register_group_handlers
 from handlers.messages import register_message_handlers
+from handlers.media import register_media_handlers
 
 
 async def main():
@@ -22,6 +23,7 @@ async def main():
             register_command_handlers(bot)
             register_message_handlers(bot, session)
             register_group_handlers(bot, session)
+            register_media_handlers(bot, session)
 
             logging.info('Bot starting...')
 
