@@ -78,7 +78,9 @@ async def show_status(bot, message, text=STREAM_STATUS_TEXT):
             await bot.send_rich_message_draft(
                 chat_id=message.chat.id, draft_id=message.message_id,
                 message_thread_id=message.message_thread_id,
-                rich_message=types.InputRichMessage(markdown=text),
+                rich_message=types.InputRichMessage(
+                    blocks=[types.InputRichBlockThinking(text=text)],
+                ),
             )
         except TELEGRAM_ERRORS:
             try:
