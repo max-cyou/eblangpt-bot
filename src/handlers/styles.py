@@ -17,7 +17,7 @@ def style_menu(user_id):
         'выбирай стиль снизу💪 работает в личке группах и guest\n'
         'память на месте вась — стереть можно через /clear\n\n'
         'хочешь свой стиль👍 закидывай через пулл реквест:\n'
-        'github.com/max-cyou/eblangpt-bot/CONTRIBUTING.md'
+        'https://github.com/max-cyou/eblangpt-bot/blob/main/CONTRIBUTING.md'
     )
     return text, keyboard
 
