@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -11,7 +12,7 @@ from services.history import get_history, save_exchange
 from services.styles import get_user_style, set_user_style
 from fallbacks.common import FALLBACKS as COMMON_FALLBACKS
 from fallbacks.schizo import FALLBACKS as SCHIZO_FALLBACKS
-from styles import Style, get_style
+from styles import STYLES, Style, get_style
 from services.errors import fallback_text, failure_details
 from services.styles import format_style_answer
 from handlers.styles import register_style_handlers
@@ -113,6 +114,24 @@ class StyleHandlerTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
         other.from_user.id = 43
         await self.bot.process_new_messages([other])
         self.assertEqual(self.session.calls[-1][1]['json']['messages'][0]['content'], prompt.SYSTEM_PROMPT)
+
+
+class StyleCatalogTests(unittest.TestCase):
+    def test_every_style_follows_contributing_rules(self):
+        src = Path(__file__).resolve().parent.parent / 'src'
+        # Telegram caps callback_data at 64 bytes; use the largest possible user ID.
+        max_user_id = 2 ** 53 - 1
+        for key, style in STYLES.items():
+            with self.subTest(style=key):
+                self.assertRegex(key, r'^[a-z][a-z0-9_]{0,31}$')
+                self.assertEqual(style.id, key)
+                self.assertTrue((src / 'prompts' / f'{key}.py').is_file())
+                self.assertTrue((src / 'fallbacks' / f'{key}.py').is_file())
+                self.assertTrue(style.name and style.description and style.system_prompt.strip())
+                self.assertEqual(set(style.fallbacks), set(COMMON_FALLBACKS))
+                self.assertTrue(all(isinstance(text, str) and text.strip() for text in style.fallbacks.values()))
+                self.assertLessEqual(set(style.statuses), {'ai', 'image', 'audio'})
+                self.assertLessEqual(len(f'style:{max_user_id}:{key}'.encode()), 64)
 
 
 class StyleFormattingTests(unittest.TestCase):

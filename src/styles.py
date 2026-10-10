@@ -5,6 +5,8 @@ from prompts.default import SYSTEM_PROMPT as DEFAULT_PROMPT
 from prompts.schizo import SYSTEM_PROMPT as SCHIZO_PROMPT
 from fallbacks.default import FALLBACKS as DEFAULT_FALLBACKS
 from fallbacks.schizo import FALLBACKS as SCHIZO_FALLBACKS
+from prompts.zoomer import SYSTEM_PROMPT as ZOOMER_PROMPT
+from fallbacks.zoomer import FALLBACKS as ZOOMER_FALLBACKS
 
 
 @dataclass(frozen=True)
@@ -39,6 +41,16 @@ STYLES = {
             'ai': 'бляя... ААА мыслы в ggучу собырею @monk pashol naxxuy 🤝 ААА',
             'image': 'бляя... пыggчу рессметрывею глеземы @vatnouser ищек бля 🥀 пыggчу',
             'audio': 'бляя... войс в ушах ggручу @monk pashol naxxuy 🤝 войс',
+        },
+    ),
+    'zoomer': Style(
+        id='zoomer', name='зумер', description='злой зумер, матерится через слово, но по делу',
+        system_prompt=ZOOMER_PROMPT,
+        fallbacks=ZOOMER_FALLBACKS,
+        statuses={
+            'ai': 'ща нахуй, вась, думаю 🗿',
+            'image': 'смотрю пикчу, не торопи бля 💀',
+            'audio': 'слушаю твой войс, вась, пиздец 😮‍💨',
         },
     ),
 }
