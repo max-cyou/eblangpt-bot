@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import os
 
@@ -21,6 +22,7 @@ TEXT_FILE_EXTENSIONS = {
     '.md', '.php', '.ps1', '.py', '.rb', '.rs', '.sh', '.sql', '.swift', '.tex',
     '.toml', '.ts', '.tsx', '.txt', '.xml', '.yaml', '.yml',
 }
+IMAGE_RECOGNITION_TIMEOUT = 10
 
 
 def attachment_kind(message):
@@ -48,6 +50,11 @@ async def download_attachment(bot, attachment, limit, kind):
 
 
 async def recognize_image(bot, session, photo, question=''):
+    async with asyncio.timeout(IMAGE_RECOGNITION_TIMEOUT):
+        return await _recognize_image(bot, session, photo, question)
+
+
+async def _recognize_image(bot, session, photo, question):
     if not config.OPENROUTER_API_KEY:
         raise RuntimeError('vision_not_configured')
     raw = await download_attachment(bot, photo, config.IMAGE_MAX_BYTES, 'image')
@@ -70,8 +77,11 @@ async def recognize_image(bot, session, photo, question=''):
         'Authorization': f'Bearer {config.OPENROUTER_API_KEY}',
         'HTTP-Referer': 'https://t.me/', 'X-Title': 'EblanGPT',
     }
-    models = dict.fromkeys((config.OPENROUTER_VISION_MODEL, *config.OPENROUTER_VISION_FALLBACK_MODELS))
-    last_error = None
+    models = dict.fromkeys(model for model in (
+        config.OPENROUTER_VISION_MODEL, *config.OPENROUTER_VISION_FALLBACK_MODELS,
+    ) if model)
+    if not models:
+        raise RuntimeError('No vision models configured')
     async def request_description():
         async with request_slots:
             async with session.post(config.OPENROUTER_CHAT_URL, json=dict(payload), headers=headers) as response:
@@ -91,19 +101,14 @@ async def recognize_image(bot, session, photo, question=''):
             raise ValueError('Vision description is empty')
         return description
 
-    for model in models:
-        payload['model'] = model
-        try:
-            return await retry_once(request_description)
-        except aiohttp.ClientResponseError as error:
-            if error.status not in (404, 408, 409, 429, 500, 502, 503, 504):
-                raise
-            last_error = error
-        except (aiohttp.ClientError, TimeoutError, ValueError) as error:
-            last_error = error
-    if last_error:
-        raise last_error
-    raise RuntimeError('No vision models configured')
+    while True:
+        for model in models:
+            payload['model'] = model
+            try:
+                return await retry_once(request_description)
+            except (aiohttp.ClientError, TimeoutError, ValueError):
+                # The shared deadline also interrupts a stalled request.
+                await asyncio.sleep(0)
 
 
 async def transcribe_audio(bot, session, audio):

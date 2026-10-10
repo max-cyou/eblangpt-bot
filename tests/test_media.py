@@ -1,8 +1,10 @@
+import asyncio
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import config
+from services import media
 from handlers.media import register_media_handlers
 from handlers.messages import register_message_handlers
 from services.history import get_history
@@ -87,3 +89,35 @@ class MediaTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.session.calls), 2)
         self.assertIsNot(self.session.calls[0][1]['data'], self.session.calls[1][1]['data'])
         self.bot.download_file.assert_awaited_once()
+
+    async def test_vision_retries_more_than_two_attempts_until_success(self):
+        description = 'На изображении находится большая красная машина'
+        self.session.responses = [Response(status=503) for _ in range(5)] + [Response({'choices': [{'message': {'content': description}}]})]
+        with patch.multiple(config, OPENROUTER_API_KEY='offline-key', OPENROUTER_VISION_MODEL='first', OPENROUTER_VISION_FALLBACK_MODELS=('second',)):
+            self.assertEqual(await recognize_image(self.bot, self.session, SimpleNamespace(file_id='photo', file_size=20)), description)
+        self.assertEqual([call[1]['json']['model'] for call in self.session.calls], ['first', 'first', 'second', 'second', 'first', 'first'])
+        self.bot.download_file.assert_awaited_once()
+
+    async def test_vision_repeated_failures_stop_at_shared_deadline(self):
+        self.session.responses = [Response(status=404)]
+        with patch.object(config, 'OPENROUTER_API_KEY', 'offline-key'), patch.object(media, 'IMAGE_RECOGNITION_TIMEOUT', 0.02):
+            with self.assertRaises(TimeoutError):
+                await recognize_image(self.bot, self.session, SimpleNamespace(file_id='photo', file_size=20))
+        self.assertGreater(len(self.session.calls), 2)
+        attempts = len(self.session.calls)
+        await asyncio.sleep(0)
+        self.assertEqual(len(self.session.calls), attempts)
+
+    async def test_vision_deadline_interrupts_stalled_request(self):
+        async def stalled_json():
+            await asyncio.sleep(1)
+
+        response = Response()
+        response.json = stalled_json
+        self.session.responses = [response]
+        started = asyncio.get_running_loop().time()
+        with patch.object(config, 'OPENROUTER_API_KEY', 'offline-key'), patch.object(media, 'IMAGE_RECOGNITION_TIMEOUT', 0.02):
+            with self.assertRaises(TimeoutError):
+                await recognize_image(self.bot, self.session, SimpleNamespace(file_id='photo', file_size=20))
+        self.assertLess(asyncio.get_running_loop().time() - started, 0.5)
+        self.assertEqual(len(self.session.calls), 1)
