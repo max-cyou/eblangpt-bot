@@ -9,7 +9,8 @@ from services.errors import REQUEST_ERRORS, failure_details, fallback_text
 from services.history import get_chat_lock, save_message
 from services.media import attachment_kind, prepare_media_prompt
 from services.replies import answer_message
-from services.telegram import AUDIO_STATUS_TEXT, IMAGE_STATUS_TEXT, finish_status, show_status
+from services.styles import get_message_style, style_status_text
+from services.telegram import finish_status, show_status
 
 
 logger = logging.getLogger(__name__)
@@ -21,16 +22,17 @@ async def answer_media(bot, session, message, question='', source=None, lock_hel
 
 
 async def answer_media_locked(bot, session, message, question='', source=None):
+    style = get_message_style(message)
     source = source or message
     kind = attachment_kind(source)
     remember_message(message)
-    status_text = {'audio': AUDIO_STATUS_TEXT, 'image': IMAGE_STATUS_TEXT}.get(kind)
+    status_text = style_status_text(style, kind) if kind in ('audio', 'image') else None
     status = await show_status(bot, message, status_text) if status_text else None
     try:
         text, _ = await prepare_media_prompt(bot, session, message, question, source)
     except REQUEST_ERRORS as error:
         logger.warning('Attachment failed: %s', failure_details(error))
-        await finish_status(bot, message, status, fallback_text(error, kind))
+        await finish_status(bot, message, status, fallback_text(error, kind, style))
         return
     if source is not message:
         reference_text = get_message_content_text(source)
@@ -38,7 +40,7 @@ async def answer_media_locked(bot, session, message, question='', source=None):
             text += f'\nтекст связанного сообщения:\n{reference_text}'
     if message.chat.type != 'private':
         text = format_group_message(message, text)
-    await answer_message(bot, session, message, text, status, lock_held=True)
+    await answer_message(bot, session, message, text, status, lock_held=True, style=style)
 
 
 def register_media_handlers(bot, session):

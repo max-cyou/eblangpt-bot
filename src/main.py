@@ -13,6 +13,7 @@ from handlers.guest import register_guest_handlers
 from handlers.groups import register_group_handlers
 from handlers.messages import register_message_handlers
 from handlers.media import register_media_handlers
+from handlers.styles import register_style_handlers
 from services.health import notify_ready
 
 
@@ -25,6 +26,7 @@ async def main():
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
             register_command_handlers(bot)
+            register_style_handlers(bot)
             register_admin_handlers(bot)
             register_event_handlers(bot)
             register_message_handlers(bot, session)
@@ -36,7 +38,7 @@ async def main():
             logging.info('Bot starting...')
             notify_ready()
 
-            await bot.infinity_polling(allowed_updates=['message', 'guest_message', 'my_chat_member'])
+            await bot.infinity_polling(allowed_updates=['message', 'guest_message', 'my_chat_member', 'callback_query'])
     finally:
         await bot.close_session()
 

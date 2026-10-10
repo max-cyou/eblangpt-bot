@@ -3,7 +3,7 @@ import json
 import time
 
 import config
-import prompt
+from styles import get_style
 from services.retry import retry_once
 
 
@@ -20,17 +20,19 @@ def response_text(result):
     return content
 
 
-async def stream_answer(query, session, history=None):
+async def stream_answer(query, session, history=None, system_prompt=None):
     payload = {
         'model': config.AI_MODEL,
         'messages': [
-            {'role': 'system', 'content': prompt.SYSTEM_PROMPT},
+            {'role': 'system', 'content': get_style().system_prompt if system_prompt is None else system_prompt},
             *(history or []),
             {'role': 'user', 'content': query},
         ],
         'max_tokens': config.AI_MAX_TOKENS,
         'stream': True,
     }
+    if config.AI_REASONING_EFFORT:
+        payload['reasoning_effort'] = config.AI_REASONING_EFFORT
     headers = {'Authorization': f'Bearer {config.AI_API_KEY}'}
     async with request_slots:
         async with session.post(config.AI_API_URL, headers=headers, json=payload) as response:
@@ -64,16 +66,16 @@ async def stream_answer(query, session, history=None):
                     yield chunk
 
 
-async def request_answer(query, session, history=None, update_callback=None):
-    return await retry_once(lambda: _request_answer(query, session, history, update_callback))
+async def request_answer(query, session, history=None, update_callback=None, system_prompt=None):
+    return await retry_once(lambda: _request_answer(query, session, history, update_callback, system_prompt))
 
 
-async def _request_answer(query, session, history=None, update_callback=None):
+async def _request_answer(query, session, history=None, update_callback=None, system_prompt=None):
     parts = []
     length = 0
     last_length = 0
     last_update = 0
-    async for chunk in stream_answer(query, session, history):
+    async for chunk in stream_answer(query, session, history, system_prompt):
         parts.append(chunk)
         length += len(chunk)
         now = time.monotonic()

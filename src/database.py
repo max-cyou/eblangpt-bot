@@ -34,6 +34,11 @@ def initialize_database(path):
                 value INTEGER NOT NULL DEFAULT 0
             );
 
+            CREATE TABLE IF NOT EXISTS user_settings (
+                user_id INTEGER PRIMARY KEY,
+                style_id TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS group_random_reply_state (
                 chat_id INTEGER PRIMARY KEY,
                 messages_left INTEGER NOT NULL
@@ -211,3 +216,19 @@ def delete_history(path, chat_id, thread_id=0):
     with _db_lock, closing(sqlite3.connect(path)) as connection:
         with connection:
             connection.execute('DELETE FROM history WHERE chat_id = ? AND thread_id = ?', (chat_id, thread_id))
+
+
+def get_user_style_id(path, user_id):
+    with _db_lock, closing(sqlite3.connect(path)) as connection:
+        row = connection.execute('SELECT style_id FROM user_settings WHERE user_id = ?', (user_id,)).fetchone()
+    return row[0] if row else None
+
+
+def set_user_style_id(path, user_id, style_id):
+    with _db_lock, closing(sqlite3.connect(path)) as connection:
+        with connection:
+            connection.execute(
+                '''INSERT INTO user_settings(user_id, style_id) VALUES (?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET style_id = excluded.style_id''',
+                (user_id, style_id),
+            )

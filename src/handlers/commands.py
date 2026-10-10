@@ -42,7 +42,7 @@ async def start_handler(message, bot):
         'я умею читать писать и отвечать в guest режиме\n'
         'читать сообщения в группах файлы и геолокацию\n'
         'смотреть пикчи и слушать голосовые\n\n'
-        '/clear — очистить контекст\n\nа так же мой сурс - https://github.com/max-cyou/eblangpt-bot!', keyboard,
+        'а так же мой сурс - https://github.com/max-cyou/eblangpt-bot\n\n/help — команды все', keyboard,
     )
 
 
@@ -50,18 +50,34 @@ async def clear_handler(message, bot):
     remember_message(message)
     async with get_chat_lock(message.chat.id, message.message_thread_id):
         clear_history(message.chat.id, message.message_thread_id)
-        await send_text(bot, message, 'контекст очищен✅ вась')
+        await send_text(bot, message, 'контекст стер✅ стиль на месте вась')
+
+
+async def help_handler(message, bot):
+    remember_message(message)
+    await send_text(
+        bot, message,
+        '**слыш😈 вот команды вась**\n\n'
+        '/start — знакомимся👍 погнали\n'
+        '/help — сюда гляди если забыл команды\n'
+        '/style — выбирай как мне базарить💪\n'
+        '/clear — стираем память диалога✅ начнем заново\n\n'
+        'пиши текст кидай пикчи войсы или файлы😈 разберемся вась',
+    )
 
 
 def register_command_handlers(bot):
     bot.register_message_handler(start_handler, commands=['start'], pass_bot=True)
     bot.register_message_handler(clear_handler, commands=['clear'], pass_bot=True)
+    bot.register_message_handler(help_handler, commands=['help'], pass_bot=True)
 
 
 async def register_command_menu(bot):
     await bot.set_my_commands([
-        types.BotCommand('start', 'запустить бота'),
-        types.BotCommand('clear', 'очистить контекст диалога'),
-        types.BotCommand('stats', 'статистика бота для админа'),
-        types.BotCommand('broadcast', 'рассылка для админа'),
+        types.BotCommand('start', 'знакомимся👍 погнали вась'),
+        types.BotCommand('help', 'команды тут😈 гляди вась'),
+        types.BotCommand('clear', 'стираем память✅ начнем заново'),
+        types.BotCommand('style', 'выбирай как мне базарить💪'),
+        types.BotCommand('stats', 'циферки бота😈 только для админа'),
+        types.BotCommand('broadcast', 'рассылка💪 только для админа'),
     ])

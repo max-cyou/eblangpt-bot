@@ -7,10 +7,10 @@ from database import increment_counter
 from services.ai import request_answer
 from services.chats import strip_bot_mention
 from services.context import get_audio_attachment, get_image_attachment, get_message_content_text, get_object_field
-from services.emojis import add_emojis_to_casual_answer
 from services.errors import REQUEST_ERRORS, failure_details, fallback_text
 from services.media import attachment_kind, prepare_media_prompt
-from services.telegram import AUDIO_STATUS_TEXT, IMAGE_STATUS_TEXT, STREAM_STATUS_TEXT, edit_text, telegram_call, text_chunks
+from services.styles import format_style_answer, get_message_style, style_status_text
+from services.telegram import edit_text, telegram_call, text_chunks
 
 
 logger = logging.getLogger(__name__)
@@ -57,13 +57,14 @@ def guest_media_source(message, references):
 
 def register_guest_handlers(bot, session):
     async def guest_handler(message):
+        style = get_message_style(message)
         increment_counter(config.DATABASE_PATH, 'guest_requests')
         user_text = await strip_bot_mention(bot, get_message_content_text(message)) or 'эй'
         references = guest_references(message)
         context = guest_context(message, references)
         source = guest_media_source(message, references)
         kind = attachment_kind(source) if source else 'ai'
-        status_text = {'image': IMAGE_STATUS_TEXT, 'audio': AUDIO_STATUS_TEXT}.get(kind, STREAM_STATUS_TEXT)
+        status_text = style_status_text(style, kind)
         placeholder = types.InlineQueryResultArticle(
             id='guest-answer', title='eblangpt',
             input_message_content=types.InputRichMessageContent(types.InputRichMessage(markdown=status_text)),
@@ -88,16 +89,16 @@ def register_guest_handlers(bot, session):
                 ai_text = f'контекст связанных сообщений:\n{context}\n\nзапрос пользователя:\n{ai_text}'
         except REQUEST_ERRORS as error:
             logger.warning('Guest attachment failed: %s', failure_details(error))
-            await update(fallback_text(error, kind))
+            await update(fallback_text(error, kind, style))
             return
         increment_counter(config.DATABASE_PATH, 'generations')
         try:
-            answer = await request_answer(ai_text, session, [], update)
-            answer = add_emojis_to_casual_answer(answer, [])
+            answer = await request_answer(ai_text, session, [], update, system_prompt=style.system_prompt)
+            answer = format_style_answer(answer, [], style)
         except REQUEST_ERRORS as error:
             logger.warning('Guest AI failed: %s', failure_details(error))
             increment_counter(config.DATABASE_PATH, 'ai_errors')
-            answer = fallback_text(error)
+            answer = fallback_text(error, style=style)
         chunks = text_chunks(answer)
         if len(chunks) > 1:
             answer = chunks[0] + '\n\nответ обрезан по лимиту Telegram'

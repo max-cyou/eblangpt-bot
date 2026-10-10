@@ -11,6 +11,7 @@ BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN', '').strip()
 AI_API_KEY = os.getenv('AI_API_KEY', '').strip()
 AI_API_URL = os.getenv('AI_API_URL', '').strip()
 AI_MODEL = os.getenv('AI_MODEL', '').strip()
+AI_REASONING_EFFORT = os.getenv('AI_REASONING_EFFORT', 'none').strip()
 
 
 def positive_int(name, default):

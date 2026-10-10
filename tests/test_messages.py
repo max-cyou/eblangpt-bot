@@ -1,6 +1,7 @@
 import asyncio
 import unittest
 from unittest.mock import AsyncMock, patch
+import config
 
 from handlers.commands import register_command_handlers
 from handlers.groups import register_group_handlers
@@ -82,6 +83,17 @@ class MessageTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
 
 
 class StreamTests(unittest.IsolatedAsyncioTestCase):
+    async def test_reasoning_effort_is_configurable(self):
+        for effort in ('none', ''):
+            session = Session()
+            with patch.object(config, 'AI_REASONING_EFFORT', effort):
+                await request_answer('test', session)
+            payload = session.calls[0][1]['json']
+            if effort:
+                self.assertEqual(payload['reasoning_effort'], effort)
+            else:
+                self.assertNotIn('reasoning_effort', payload)
+
     async def test_retry_discards_partial_failed_stream(self):
         first = Response(lines=[
             'data: {"choices":[{"delta":{"content":"discard this "}}]}\n',
