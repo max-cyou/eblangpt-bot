@@ -92,7 +92,7 @@ async def recognize_image(bot, session, photo, question=''):
                 raise ValueError('Vision description is empty')
             return description
         except aiohttp.ClientResponseError as error:
-            if error.status not in (408, 409, 429, 500, 502, 503, 504):
+            if error.status not in (404, 408, 409, 429, 500, 502, 503, 504):
                 raise
             last_error = error
         except (aiohttp.ClientError, TimeoutError, ValueError) as error:

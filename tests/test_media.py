@@ -61,3 +61,12 @@ class MediaTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
         self.bot.get_file.assert_not_awaited()
         self.assertEqual(get_history(1), [])
         self.assertIn('слишком большой', self.bot.send_rich_message.call_args.kwargs['rich_message'].markdown)
+
+    async def test_missing_vision_model_uses_backup(self):
+        photo = SimpleNamespace(file_id='photo', file_size=20)
+        description = 'На изображении находится большая красная машина'
+        self.session.responses = [Response(status=404), Response({'choices': [{'message': {'content': description}}]})]
+        with patch.multiple(config, OPENROUTER_API_KEY='offline-key', OPENROUTER_VISION_MODEL='removed', OPENROUTER_VISION_FALLBACK_MODELS=('available',)):
+            self.assertEqual(await recognize_image(self.bot, self.session, photo), description)
+        self.assertEqual(len(self.session.calls), 2)
+        self.assertEqual(self.session.calls[-1][1]['json']['model'], 'available')

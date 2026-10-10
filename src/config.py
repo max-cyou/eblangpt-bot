@@ -34,7 +34,7 @@ if GROUP_RANDOM_REPLY_MIN > GROUP_RANDOM_REPLY_MAX:
 
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY', '').strip()
 OPENROUTER_CHAT_URL = os.getenv('OPENROUTER_CHAT_URL', 'https://openrouter.ai/api/v1/chat/completions').strip()
-OPENROUTER_VISION_MODEL = os.getenv('OPENROUTER_VISION_MODEL', 'inclusionai/ling-3.0-flash-vl:free').strip()
+OPENROUTER_VISION_MODEL = os.getenv('OPENROUTER_VISION_MODEL', 'google/gemma-4-26b-a4b-it:free').strip()
 OPENROUTER_VISION_FALLBACK_MODELS = tuple(
     item.strip() for item in os.getenv(
         'OPENROUTER_VISION_FALLBACK_MODELS',
