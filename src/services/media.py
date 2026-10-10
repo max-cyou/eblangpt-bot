@@ -7,6 +7,7 @@ import config
 from database import increment_counter
 from services.ai import request_slots, response_text
 from services.errors import REQUEST_ERRORS
+from services.retry import retry_once
 from services.context import (
     format_audio_prompt, format_document_prompt, format_location,
     get_audio_attachment, get_audio_format, get_image_attachment,
@@ -71,26 +72,29 @@ async def recognize_image(bot, session, photo, question=''):
     }
     models = dict.fromkeys((config.OPENROUTER_VISION_MODEL, *config.OPENROUTER_VISION_FALLBACK_MODELS))
     last_error = None
+    async def request_description():
+        async with request_slots:
+            async with session.post(config.OPENROUTER_CHAT_URL, json=dict(payload), headers=headers) as response:
+                response.raise_for_status()
+                result = await response.json()
+        # Some vision providers return content as a list of text blocks.
+        try:
+            content = result['choices'][0]['message']['content']
+            if isinstance(content, list):
+                result['choices'][0]['message']['content'] = '\n'.join(
+                    item.get('text', '') for item in content if isinstance(item, dict) and item.get('type') == 'text'
+                )
+        except (KeyError, IndexError, TypeError) as error:
+            raise ValueError('Invalid vision response') from error
+        description = response_text(result).strip()
+        if len(description) < 20:
+            raise ValueError('Vision description is empty')
+        return description
+
     for model in models:
         payload['model'] = model
         try:
-            async with request_slots:
-                async with session.post(config.OPENROUTER_CHAT_URL, json=payload, headers=headers) as response:
-                    response.raise_for_status()
-                    result = await response.json()
-            # Some vision providers return content as a list of text blocks.
-            try:
-                content = result['choices'][0]['message']['content']
-                if isinstance(content, list):
-                    result['choices'][0]['message']['content'] = '\n'.join(
-                        item.get('text', '') for item in content if isinstance(item, dict) and item.get('type') == 'text'
-                    )
-            except (KeyError, IndexError, TypeError) as error:
-                raise ValueError('Invalid vision response') from error
-            description = response_text(result).strip()
-            if len(description) < 20:
-                raise ValueError('Vision description is empty')
-            return description
+            return await retry_once(request_description)
         except aiohttp.ClientResponseError as error:
             if error.status not in (404, 408, 409, 429, 500, 502, 503, 504):
                 raise
@@ -107,21 +111,24 @@ async def transcribe_audio(bot, session, audio):
         raise RuntimeError('audio_not_configured')
     raw = await download_attachment(bot, audio, config.AUDIO_MAX_BYTES, 'audio')
     audio_format = get_audio_format(audio)
-    form = aiohttp.FormData()
-    form.add_field('file', raw, filename=f'voice.{audio_format}',
-                   content_type=getattr(audio, 'mime_type', None) or f'audio/{audio_format}')
-    form.add_field('model', config.GROQ_TRANSCRIPT_MODEL)
-    form.add_field('response_format', 'json')
-    form.add_field('temperature', '0')
-    async with request_slots:
-        async with session.post(config.GROQ_TRANSCRIPT_URL, data=form,
-                                headers={'Authorization': f'Bearer {config.GROQ_API_KEY}'}) as response:
-            response.raise_for_status()
-            result = await response.json()
-    text = result.get('text') if isinstance(result, dict) else None
-    if not isinstance(text, str) or not text.strip() or text.strip().casefold() == '[речь не распознана]':
-        raise ValueError('Empty audio transcription')
-    return text.strip()
+    async def request_transcription():
+        form = aiohttp.FormData()
+        form.add_field('file', raw, filename=f'voice.{audio_format}',
+                       content_type=getattr(audio, 'mime_type', None) or f'audio/{audio_format}')
+        form.add_field('model', config.GROQ_TRANSCRIPT_MODEL)
+        form.add_field('response_format', 'json')
+        form.add_field('temperature', '0')
+        async with request_slots:
+            async with session.post(config.GROQ_TRANSCRIPT_URL, data=form,
+                                    headers={'Authorization': f'Bearer {config.GROQ_API_KEY}'}) as response:
+                response.raise_for_status()
+                result = await response.json()
+        text = result.get('text') if isinstance(result, dict) else None
+        if not isinstance(text, str) or not text.strip() or text.strip().casefold() == '[речь не распознана]':
+            raise ValueError('Empty audio transcription')
+        return text.strip()
+
+    return await retry_once(request_transcription)
 
 
 def document_is_text(document):

@@ -47,6 +47,14 @@ class MessageTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
             await self.bot.process_new_messages([make_message('fail')])
             self.assertEqual(get_history(1), [])
         self.assertEqual(self.bot.send_rich_message.await_count, 3)
+        self.assertEqual(len(self.session.calls), 6)
+
+    async def test_retry_success_saved_once_without_fallback(self):
+        self.session.responses = [Response(status=503), Response()]
+        await self.bot.process_new_messages([make_message('retry')])
+        self.assertEqual(len(self.session.calls), 2)
+        self.assertEqual(len(get_history(1)), 2)
+        self.assertEqual(get_history(1)[-1]['content'], self.bot.send_rich_message.call_args.kwargs['rich_message'].markdown)
 
     async def test_reply_text_in_private_prompt(self):
         await self.bot.process_new_messages([make_message('поясни', reply_to_message=make_message('reference text').json)])
@@ -74,6 +82,15 @@ class MessageTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
 
 
 class StreamTests(unittest.IsolatedAsyncioTestCase):
+    async def test_retry_discards_partial_failed_stream(self):
+        first = Response(lines=[
+            'data: {"choices":[{"delta":{"content":"discard this "}}]}\n',
+            'data: {"error":"unavailable"}\n',
+        ])
+        session = Session([first, Response()])
+        self.assertEqual(await request_answer('test', session), 'offline answer')
+        self.assertEqual(len(session.calls), 2)
+
     async def test_sse_and_json_compatibility(self):
         response = Response(lines=[
             'data: {"choices":[{"delta":{"content":"привет "}}]}\n',

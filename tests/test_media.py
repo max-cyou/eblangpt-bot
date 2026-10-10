@@ -6,7 +6,7 @@ import config
 from handlers.media import register_media_handlers
 from handlers.messages import register_message_handlers
 from services.history import get_history
-from services.media import download_attachment, read_text_document, recognize_image
+from services.media import download_attachment, read_text_document, recognize_image, transcribe_audio
 from tests.helpers import BotTestMixin, Response, Session, make_message
 
 
@@ -45,7 +45,7 @@ class MediaTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
     async def test_vision_fallback_and_reply_caption(self):
         photo = {'file_id': 'file', 'file_unique_id': 'unique', 'width': 10, 'height': 10, 'file_size': 20}
         description = 'На изображении находится большая красная машина'
-        self.session.responses = [Response(status=429), Response({'choices': [{'message': {'content': description}}]}), Response()]
+        self.session.responses = [Response(status=429), Response(status=429), Response({'choices': [{'message': {'content': description}}]}), Response()]
         reference = make_message(None, photo=[photo], caption='original caption').json
         with patch.multiple(config, OPENROUTER_API_KEY='offline-key', OPENROUTER_VISION_MODEL='first', OPENROUTER_VISION_FALLBACK_MODELS=('second',)):
             await self.bot.process_new_messages([make_message('что за машина', reply_to_message=reference)])
@@ -53,7 +53,8 @@ class MediaTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
         self.assertIn(description, text)
         self.assertIn('original caption', text)
         self.assertIn('что за машина', text)
-        self.assertEqual(len(self.session.calls), 3)
+        self.assertEqual(len(self.session.calls), 4)
+        self.assertEqual([call[1]['json']['model'] for call in self.session.calls[:-1]], ['first', 'first', 'second'])
 
     async def test_download_errors_and_size_limits_return_fallback(self):
         document = {'file_id': 'file', 'file_unique_id': 'unique', 'file_name': 'text.txt', 'mime_type': 'text/plain', 'file_size': config.TEXT_FILE_MAX_BYTES + 1}
@@ -65,8 +66,24 @@ class MediaTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
     async def test_missing_vision_model_uses_backup(self):
         photo = SimpleNamespace(file_id='photo', file_size=20)
         description = 'На изображении находится большая красная машина'
-        self.session.responses = [Response(status=404), Response({'choices': [{'message': {'content': description}}]})]
+        self.session.responses = [Response(status=404), Response(status=404), Response({'choices': [{'message': {'content': description}}]})]
         with patch.multiple(config, OPENROUTER_API_KEY='offline-key', OPENROUTER_VISION_MODEL='removed', OPENROUTER_VISION_FALLBACK_MODELS=('available',)):
             self.assertEqual(await recognize_image(self.bot, self.session, photo), description)
-        self.assertEqual(len(self.session.calls), 2)
+        self.assertEqual(len(self.session.calls), 3)
         self.assertEqual(self.session.calls[-1][1]['json']['model'], 'available')
+
+    async def test_vision_retries_empty_response_before_next_model(self):
+        description = 'На изображении находится большая красная машина'
+        self.session.responses = [Response({'choices': []}), Response({'choices': [{'message': {'content': description}}]})]
+        with patch.multiple(config, OPENROUTER_API_KEY='offline-key', OPENROUTER_VISION_MODEL='first', OPENROUTER_VISION_FALLBACK_MODELS=('second',)):
+            self.assertEqual(await recognize_image(self.bot, self.session, SimpleNamespace(file_id='photo', file_size=20)), description)
+        self.assertEqual([call[1]['json']['model'] for call in self.session.calls], ['first', 'first'])
+
+    async def test_audio_retries_with_fresh_multipart_body(self):
+        self.session.responses = [Response(status=503), Response({'text': 'распознанный текст'})]
+        with patch.object(config, 'GROQ_API_KEY', 'offline-key'):
+            text = await transcribe_audio(self.bot, self.session, SimpleNamespace(file_id='audio', file_size=20, mime_type='audio/ogg'))
+        self.assertEqual(text, 'распознанный текст')
+        self.assertEqual(len(self.session.calls), 2)
+        self.assertIsNot(self.session.calls[0][1]['data'], self.session.calls[1][1]['data'])
+        self.bot.download_file.assert_awaited_once()

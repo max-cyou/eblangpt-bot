@@ -4,6 +4,7 @@ import time
 
 import config
 import prompt
+from services.retry import retry_once
 
 
 request_slots = asyncio.Semaphore(config.MAX_CONCURRENT_REQUESTS)
@@ -64,6 +65,10 @@ async def stream_answer(query, session, history=None):
 
 
 async def request_answer(query, session, history=None, update_callback=None):
+    return await retry_once(lambda: _request_answer(query, session, history, update_callback))
+
+
+async def _request_answer(query, session, history=None, update_callback=None):
     parts = []
     length = 0
     last_length = 0
