@@ -6,6 +6,7 @@ from services.history import get_chat_lock, save_message
 from services.replies import answer_message
 from handlers.media import answer_media
 from services.media import attachment_kind
+from services.styles import get_message_style
 
 
 async def remember_group_text(message, text):
@@ -23,6 +24,7 @@ def register_group_handlers(bot, session):
         if message.from_user.is_bot:
             await remember_group_text(message, text)
             return
+        get_message_style(message)
         triggered = await group_is_triggered(bot, message, text)
         random_due = random_reply_due(message.chat.id)
         if not triggered and not random_due:

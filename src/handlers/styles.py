@@ -15,6 +15,7 @@ def style_menu(user_id):
     text = (
         f'слыш😈 сейчас базарю так: {selected.name}\n{selected.description}\n\n'
         'выбирай стиль снизу💪 работает в личке группах и guest\n'
+        'новые ветки — с твоим стилем, в ответах держим стиль того кто начал\n'
         'память на месте вась — стереть можно через /clear\n\n'
         'хочешь свой стиль👍 закидывай через пулл реквест:\n'
         'https://github.com/max-cyou/eblangpt-bot/blob/main/CONTRIBUTING.md'

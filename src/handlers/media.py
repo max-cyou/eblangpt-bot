@@ -51,6 +51,7 @@ def register_media_handlers(bot, session):
         remember_message(message)
         if not message.from_user or message.from_user.is_bot:
             return
+        get_message_style(message)
         caption = get_message_content_text(message)
         triggered = await group_is_triggered(bot, message, caption)
         random_due = random_reply_due(message.chat.id)

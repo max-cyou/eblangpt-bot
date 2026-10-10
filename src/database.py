@@ -39,6 +39,23 @@ def initialize_database(path):
                 style_id TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS message_styles (
+                scope TEXT NOT NULL,
+                message_id INTEGER NOT NULL,
+                owner_id INTEGER,
+                style_id TEXT NOT NULL,
+                PRIMARY KEY (scope, message_id)
+            );
+
+            CREATE TABLE IF NOT EXISTS guest_response_styles (
+                scope TEXT NOT NULL,
+                caller_id INTEGER NOT NULL,
+                content_hash TEXT NOT NULL,
+                owner_id INTEGER NOT NULL,
+                style_id TEXT NOT NULL,
+                PRIMARY KEY (scope, caller_id, content_hash, owner_id, style_id)
+            );
+
             CREATE TABLE IF NOT EXISTS group_random_reply_state (
                 chat_id INTEGER PRIMARY KEY,
                 messages_left INTEGER NOT NULL
@@ -232,3 +249,42 @@ def set_user_style_id(path, user_id, style_id):
                 ON CONFLICT(user_id) DO UPDATE SET style_id = excluded.style_id''',
                 (user_id, style_id),
             )
+
+
+def get_message_style_binding(path, scope, message_id):
+    with _db_lock, closing(sqlite3.connect(path)) as connection:
+        return connection.execute(
+            'SELECT owner_id, style_id FROM message_styles WHERE scope = ? AND message_id = ?',
+            (scope, message_id),
+        ).fetchone()
+
+
+def pin_message_style(path, scope, message_id, owner_id, style_id):
+    with _db_lock, closing(sqlite3.connect(path)) as connection:
+        with connection:
+            connection.execute(
+                'INSERT OR IGNORE INTO message_styles(scope, message_id, owner_id, style_id) VALUES (?, ?, ?, ?)',
+                (scope, message_id, owner_id, style_id),
+            )
+            return connection.execute(
+                'SELECT owner_id, style_id FROM message_styles WHERE scope = ? AND message_id = ?',
+                (scope, message_id),
+            ).fetchone()
+
+
+def remember_guest_response_style(path, scope, caller_id, content_hash, owner_id, style_id):
+    with _db_lock, closing(sqlite3.connect(path)) as connection:
+        with connection:
+            connection.execute(
+                'INSERT OR IGNORE INTO guest_response_styles VALUES (?, ?, ?, ?, ?)',
+                (scope, caller_id, content_hash, owner_id or 0, style_id),
+            )
+
+
+def find_guest_response_style(path, scope, caller_id, content_hash):
+    with _db_lock, closing(sqlite3.connect(path)) as connection:
+        rows = connection.execute(
+            'SELECT DISTINCT owner_id, style_id FROM guest_response_styles WHERE scope = ? AND caller_id = ? AND content_hash = ?',
+            (scope, caller_id, content_hash),
+        ).fetchall()
+    return rows[0] if len(rows) == 1 else None

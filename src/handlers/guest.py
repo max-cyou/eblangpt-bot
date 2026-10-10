@@ -9,6 +9,7 @@ from services.chats import strip_bot_mention
 from services.context import get_audio_attachment, get_image_attachment, get_message_content_text, get_object_field
 from services.errors import REQUEST_ERRORS, failure_details, fallback_text
 from services.media import attachment_kind, prepare_media_prompt
+from services.branches import remember_guest_reply_style, remember_guest_reply_text
 from services.styles import format_style_answer, get_message_style, style_status_text
 from services.telegram import edit_text, telegram_call, text_chunks
 
@@ -57,10 +58,10 @@ def guest_media_source(message, references):
 
 def register_guest_handlers(bot, session):
     async def guest_handler(message):
-        style = get_message_style(message)
+        references = guest_references(message)
+        style = get_message_style(message, references)
         increment_counter(config.DATABASE_PATH, 'guest_requests')
         user_text = await strip_bot_mention(bot, get_message_content_text(message)) or 'эй'
-        references = guest_references(message)
         context = guest_context(message, references)
         source = guest_media_source(message, references)
         kind = attachment_kind(source) if source else 'ai'
@@ -71,6 +72,8 @@ def register_guest_handlers(bot, session):
         )
         try:
             sent = await telegram_call(bot.answer_guest_query, guest_query_id=message.guest_query_id, result=placeholder)
+            remember_guest_reply_style(message, sent.inline_message_id)
+            remember_guest_reply_text(message, status_text)
         except REQUEST_ERRORS as error:
             logger.warning('Guest placeholder failed: %s', failure_details(error))
             return
@@ -78,6 +81,7 @@ def register_guest_handlers(bot, session):
         async def update(text):
             try:
                 await edit_text(bot, text[:2000], inline_message_id=sent.inline_message_id)
+                remember_guest_reply_text(message, text[:2000])
             except REQUEST_ERRORS as error:
                 logger.debug('Guest stream update failed: %s', failure_details(error))
 
@@ -104,6 +108,7 @@ def register_guest_handlers(bot, session):
             answer = chunks[0] + '\n\nответ обрезан по лимиту Telegram'
         try:
             await edit_text(bot, answer, inline_message_id=sent.inline_message_id)
+            remember_guest_reply_text(message, answer)
         except REQUEST_ERRORS as error:
             logger.warning('Guest final reply failed: %s', failure_details(error))
 

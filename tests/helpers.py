@@ -1,4 +1,5 @@
 import tempfile
+from itertools import count
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
@@ -9,9 +10,12 @@ from telebot.async_telebot import AsyncTeleBot
 from telebot.types import Message
 
 
+message_ids = count(1)
+
+
 def make_message(text='привет', chat_id=1, chat_type='private', **extra):
     data = {
-        'message_id': 1, 'date': 0,
+        'message_id': next(message_ids), 'date': 0,
         'chat': {'id': chat_id, 'type': chat_type, 'title': 'Group' if chat_type != 'private' else None},
         'from': {'id': 42, 'is_bot': False, 'first_name': 'Offline', 'username': 'offline'},
         'text': text, **extra,

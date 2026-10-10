@@ -6,6 +6,7 @@ from telebot import types
 from telebot.asyncio_helper import ApiException, ApiTelegramException
 
 from services.errors import failure_details
+from services.branches import remember_reply_style
 
 
 logger = logging.getLogger(__name__)
@@ -56,6 +57,7 @@ async def send_text(bot, message, text):
             if error.error_code != 400:
                 raise
             sent = await telegram_call(bot.send_message, text=chunk, parse_mode=None, **reply_options(message))
+        remember_reply_style(message, sent)
     return sent
 
 
