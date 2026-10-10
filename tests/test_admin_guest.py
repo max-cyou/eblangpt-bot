@@ -79,10 +79,43 @@ class AdminGuestTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
         text = self.session.calls[-1][1]['json']['messages'][-1]['content']
         self.assertIn('reference text', text)
         self.assertIn('quoted text', text)
+        self.assertIn('имя: Offline\n', text)
+        self.assertIn('username: @offline\n', text)
         self.assertNotIn('@offlinebot', text)
         self.assertEqual(get_history(1), [])
         self.assertEqual(get_statistics(config.DATABASE_PATH)['guest_requests'], 1)
         self.assertEqual(self.bot.edit_message_text.call_args.kwargs['inline_message_id'], 'guest-inline')
+
+    async def test_guest_names_in_private_and_group_references(self):
+        for chat_id, chat_type in ((1, 'private'), (-5, 'group')):
+            with self.subTest(chat_type=chat_type):
+                reference = make_message('слова друга', chat_id, chat_type, **{'from': {
+                    'id': 50, 'is_bot': False, 'first_name': 'Друг', 'last_name': 'Тест',
+                }})
+                await self.bot.process_new_guest_message([make_message(
+                    'поясни', chat_id, chat_type, guest_query_id='guest',
+                    reference_messages=[reference.json],
+                )])
+                text = self.session.calls[-1][1]['json']['messages'][-1]['content']
+                self.assertIn('имя: Offline\n', text)
+                self.assertIn('username: @offline\n', text)
+                self.assertIn('имя: Друг Тест\n', text)
+                self.assertIn('username: нет\n', text)
+                self.assertIn('слова друга', text)
+
+    async def test_guest_external_reply_sender(self):
+        await self.bot.process_new_guest_message([make_message(
+            'поясни', guest_query_id='guest', external_reply={
+                'origin': {'type': 'user', 'date': 0, 'sender_user': {
+                    'id': 50, 'is_bot': False, 'first_name': 'Друг', 'username': 'friend',
+                }},
+            },
+            quote={'text': 'внешний текст', 'position': 0},
+        )])
+        text = self.session.calls[-1][1]['json']['messages'][-1]['content']
+        self.assertIn('имя: Друг\n', text)
+        self.assertIn('username: @friend\n', text)
+        self.assertIn('внешний текст', text)
 
     async def test_guest_image_keeps_reference_text(self):
         photo = {'file_id': 'file', 'file_unique_id': 'unique', 'width': 10, 'height': 10}
@@ -96,3 +129,5 @@ class AdminGuestTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
         self.assertIn('important reference', text)
         self.assertIn('красная машина', text)
         self.assertIn('что здесь', text)
+        self.assertIn('имя: Offline\n', text)
+        self.assertIn('username: @offline\n', text)

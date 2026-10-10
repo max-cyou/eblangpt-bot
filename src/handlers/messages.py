@@ -7,11 +7,7 @@ from services.replies import answer_message
 
 
 def private_prompt(message):
-    text = get_message_content_text(message)
-    reference = get_message_content_text(message.reply_to_message)
-    if reference:
-        return f'сообщение на которое ответил пользователь:\n{reference}\n\nзапрос пользователя:\n{text}'
-    return text
+    return get_message_content_text(message)
 
 
 def register_message_handlers(bot, session):

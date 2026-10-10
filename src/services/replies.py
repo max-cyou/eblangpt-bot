@@ -5,6 +5,7 @@ import config
 from database import increment_counter
 from services.ai import request_answer
 from services.chats import remember_message
+from services.context import format_user_message
 from services.errors import REQUEST_ERRORS, failure_details, fallback_text
 from services.history import get_chat_lock, get_history, save_exchange
 from services.styles import format_style_answer, get_message_style, style_status_text
@@ -16,6 +17,8 @@ logger = logging.getLogger(__name__)
 
 async def answer_message(bot, session, message, text, status=None, lock_held=False, style=None):
     remember_message(message)
+    if message.chat.type == 'private':
+        text = format_user_message(message, text)
     thread = message.message_thread_id
     async with (nullcontext() if lock_held else get_chat_lock(message.chat.id, thread)):
         history = get_history(message.chat.id, thread)

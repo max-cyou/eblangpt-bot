@@ -2,29 +2,37 @@ import os
 from telebot import types
 
 def format_group_message(message, text):
-    sender = message.from_user
+    return format_user_message(message, text, 'сообщение_из_группы')
+
+
+def format_user_message(message, text, tag='сообщение_пользователя'):
+    sender = get_object_field(message, 'from_user') or get_object_field(message, 'from')
+    if sender is None:
+        sender = get_object_field(get_object_field(message, 'origin'), 'sender_user')
     if sender is None:
         return text
 
     sender_name = full_name(sender) or 'без имени'
-    sender_username = f'@{sender.username}' if sender.username else 'нет'
+    username = get_object_field(sender, 'username')
+    sender_id = get_object_field(sender, 'id')
+    sender_username = f'@{username}' if username else 'нет'
     sender_mention = (
-        f'@{sender.username}'
-        if sender.username
-        else f'[{sender_name}](tg://user?id={sender.id})'
+        f'@{username}'
+        if username
+        else f'[{sender_name}](tg://user?id={sender_id})'
     )
     reply_context = ''
-    reply = message.reply_to_message
+    reply = get_object_field(message, 'reply_to_message')
     if reply is not None:
-        reply_sender = reply.from_user
+        reply_sender = get_object_field(reply, 'from_user') or get_object_field(reply, 'from')
         reply_sender_name = (
             full_name(reply_sender)
             if reply_sender is not None
             else 'неизвестный отправитель'
         )
         reply_sender_username = (
-            f'@{reply_sender.username}'
-            if reply_sender is not None and reply_sender.username
+            f'@{get_object_field(reply_sender, "username")}'
+            if get_object_field(reply_sender, 'username')
             else 'нет'
         )
         reply_text = get_message_content_text(reply) or '[нет текста]'
@@ -37,14 +45,14 @@ def format_group_message(message, text):
         )
 
     return (
-        '<сообщение_из_группы>\n'
+        f'<{tag}>\n'
         f'имя: {sender_name}\n'
         f'username: {sender_username}\n'
         f'упоминание: {sender_mention}\n'
-        f'telegram_id: {sender.id}\n'
+        f'telegram_id: {sender_id}\n'
         f'{reply_context}'
         f'текст: {text}\n'
-        '</сообщение_из_группы>'
+        f'</{tag}>'
     )
 
 def get_object_field(value, name, default=None):
@@ -200,4 +208,4 @@ def format_audio_prompt(transcript, question=''):
     return prompt
 
 def full_name(user):
-    return " ".join(filter(None, (getattr(user, "first_name", None), getattr(user, "last_name", None))))
+    return " ".join(filter(None, (get_object_field(user, "first_name"), get_object_field(user, "last_name"))))

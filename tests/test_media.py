@@ -26,6 +26,8 @@ class MediaTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
         text = self.session.calls[-1][1]['json']['messages'][-1]['content']
         self.assertIn('текст из файла', text)
         self.assertIn('прочитай', text)
+        self.assertIn('имя: Offline\n', text)
+        self.assertIn('username: @offline\n', text)
         await self.bot.process_new_messages([make_message(None, location={'latitude': 55.7, 'longitude': 37.6})])
         self.assertIn('55.7', self.session.calls[-1][1]['json']['messages'][-1]['content'])
 

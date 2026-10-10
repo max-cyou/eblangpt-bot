@@ -24,7 +24,9 @@ class MessageTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
         await self.bot.process_new_messages([make_message('second')])
         messages = self.session.calls[-1][1]['json']['messages']
         self.assertEqual([m['role'] for m in messages], ['system', 'user', 'assistant', 'user'])
-        self.assertEqual(messages[1]['content'], 'first')
+        self.assertIn('текст: first\n', messages[1]['content'])
+        self.assertIn('имя: Offline\n', messages[1]['content'])
+        self.assertIn('username: @offline\n', messages[1]['content'])
         await self.bot.process_new_messages([make_message('/clear')])
         self.assertEqual(get_history(1), [])
         self.assertEqual(len(self.session.calls), 2)
@@ -60,6 +62,29 @@ class MessageTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
     async def test_reply_text_in_private_prompt(self):
         await self.bot.process_new_messages([make_message('поясни', reply_to_message=make_message('reference text').json)])
         self.assertIn('reference text', self.session.calls[-1][1]['json']['messages'][-1]['content'])
+
+    async def test_private_names_and_username_changes_in_history(self):
+        sender = {'id': 42, 'is_bot': False, 'first_name': 'Макс', 'last_name': 'Тест', 'username': 'max_test'}
+        await self.bot.process_new_messages([make_message('первое', **{'from': sender})])
+        sender = dict(sender, username=None)
+        await self.bot.process_new_messages([make_message('второе', **{'from': sender})])
+        messages = self.session.calls[-1][1]['json']['messages']
+        self.assertIn('имя: Макс Тест\n', messages[1]['content'])
+        self.assertIn('username: @max_test\n', messages[1]['content'])
+        self.assertIn('имя: Макс Тест\n', messages[-1]['content'])
+        self.assertIn('username: нет\n', messages[-1]['content'])
+        self.assertIn('упоминание: [Макс Тест](tg://user?id=42)', messages[-1]['content'])
+
+    async def test_private_reply_keeps_both_authors(self):
+        reference = make_message('original', **{'from': {
+            'id': 50, 'is_bot': False, 'first_name': 'Друг', 'username': 'friend',
+        }})
+        await self.bot.process_new_messages([make_message('поясни', reply_to_message=reference.json)])
+        text = self.session.calls[-1][1]['json']['messages'][-1]['content']
+        self.assertIn('имя: Offline\n', text)
+        self.assertIn('username: @offline\n', text)
+        self.assertIn('имя: Друг\n', text)
+        self.assertIn('username: @friend\n', text)
 
     async def test_clear_waits_for_generation(self):
         entered, release = asyncio.Event(), asyncio.Event()

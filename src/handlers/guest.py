@@ -6,7 +6,7 @@ import config
 from database import increment_counter
 from services.ai import request_answer
 from services.chats import strip_bot_mention
-from services.context import get_audio_attachment, get_image_attachment, get_message_content_text, get_object_field
+from services.context import format_user_message, get_audio_attachment, get_image_attachment, get_message_content_text, get_object_field
 from services.errors import REQUEST_ERRORS, failure_details, fallback_text
 from services.media import attachment_kind, prepare_media_prompt
 from services.branches import remember_guest_reply_style, remember_guest_reply_text
@@ -35,7 +35,7 @@ def guest_references(message):
 def guest_context(message, references):
     texts = []
     for reference in references:
-        text = get_message_content_text(reference)
+        text = format_user_message(reference, get_message_content_text(reference))
         if text and text not in texts:
             texts.append(text)
     quote = get_object_field(message.quote, 'text', '')
@@ -91,6 +91,7 @@ def register_guest_handlers(bot, session):
                 ai_text, _ = await prepare_media_prompt(bot, session, message, user_text, source)
             if context:
                 ai_text = f'контекст связанных сообщений:\n{context}\n\nзапрос пользователя:\n{ai_text}'
+            ai_text = format_user_message(message, ai_text, 'сообщение_из_guest')
         except REQUEST_ERRORS as error:
             logger.warning('Guest attachment failed: %s', failure_details(error))
             await update(fallback_text(error, kind, style))
