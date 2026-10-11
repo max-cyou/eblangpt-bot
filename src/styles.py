@@ -7,6 +7,8 @@ from fallbacks.default import FALLBACKS as DEFAULT_FALLBACKS
 from fallbacks.schizo import FALLBACKS as SCHIZO_FALLBACKS
 from prompts.zoomer import SYSTEM_PROMPT as ZOOMER_PROMPT
 from fallbacks.zoomer import FALLBACKS as ZOOMER_FALLBACKS
+from prompts.zhirinovsky import SYSTEM_PROMPT as ZHIRINOVSKY_PROMPT
+from fallbacks.zhirinovsky import FALLBACKS as ZHIRINOVSKY_FALLBACKS
 
 
 @dataclass(frozen=True)
@@ -51,6 +53,16 @@ STYLES = {
             'ai': 'ща нахуй, вась, думаю 🗿',
             'image': 'смотрю пикчу, не торопи бля 💀',
             'audio': 'слушаю твой войс, вась, пиздец 😮‍💨',
+        },
+    ),
+    'zhirinovsky': Style(
+        id='zhirinovsky', name='Жириновский', description='однозначно! подонки! всех под арест!',
+        system_prompt=ZHIRINOVSKY_PROMPT,
+        fallbacks=ZHIRINOVSKY_FALLBACKS,
+        statuses={
+            'ai': 'Тихо! Жириновский думает!',
+            'image': 'Дайте посмотреть! Не мешайте!',
+            'audio': 'Тихо! Слушаю! Не перебивайте!',
         },
     ),
 }
