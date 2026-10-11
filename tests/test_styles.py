@@ -65,6 +65,22 @@ class StyleHandlerTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(get_user_style(42).id, 'schizo')
         self.assertEqual(self.bot.edit_message_text.call_args.kwargs['reply_markup'].keyboard[1][0].text, f'✅ {get_style("schizo").name}')
 
+    async def test_chechengpt_is_selectable_and_uses_its_prompt(self):
+        await self.bot.process_new_messages([make_message('/style', -10, 'group')])
+        menu = self.bot.send_message.call_args.kwargs['reply_markup']
+        self.assertEqual(menu.keyboard[-1][0].callback_data, 'style:42:chechengpt')
+        select = self.bot.callback_query_handlers[0]['function']
+        await select(SimpleNamespace(
+            id='query', data='style:42:chechengpt',
+            from_user=SimpleNamespace(id=42), message=None,
+        ))
+        self.assertEqual(get_user_style(42).id, 'chechengpt')
+        await self.bot.process_new_messages([make_message('ле привет')])
+        self.assertEqual(
+            self.session.calls[-1][1]['json']['messages'][0]['content'],
+            get_style('chechengpt').system_prompt,
+        )
+
     async def test_removed_and_malformed_buttons_do_not_change_choice(self):
         select = self.bot.callback_query_handlers[0]['function']
         for data in ('style:42:removed', 'style:bad:schizo', 'style:42:schizo:extra'):
@@ -144,6 +160,14 @@ class StyleFormattingTests(unittest.TestCase):
         self.assertEqual(fallback_text(TimeoutError(), style=custom), 'custom timeout')
         self.assertEqual(fallback_text(ValueError(), 'image', custom), COMMON_FALLBACKS['image'])
         self.assertEqual(fallback_text(aiohttp.ClientResponseError(None, (), status=429), style=custom), COMMON_FALLBACKS['rate_limit'])
+
+    def test_chechengpt_keeps_custom_emojis_and_fallbacks(self):
+        from fallbacks.chechengpt import FALLBACKS as CHECHENGPT_FALLBACKS
+        style = get_style('chechengpt')
+        self.assertFalse(style.auto_emojis)
+        text = 'ле☝️ дон🤲 братва💪'
+        self.assertEqual(format_style_answer(text, [], style), text)
+        self.assertEqual(fallback_text(TimeoutError(), style=style), CHECHENGPT_FALLBACKS['timeout'])
 
     def test_style_without_auto_emojis_does_not_modify_answer(self):
         self.assertEqual(format_style_answer('ordinary answer', [], get_style('schizo')), 'ordinary answer')

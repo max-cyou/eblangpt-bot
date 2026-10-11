@@ -7,6 +7,8 @@ from fallbacks.default import FALLBACKS as DEFAULT_FALLBACKS
 from fallbacks.schizo import FALLBACKS as SCHIZO_FALLBACKS
 from prompts.zoomer import SYSTEM_PROMPT as ZOOMER_PROMPT
 from fallbacks.zoomer import FALLBACKS as ZOOMER_FALLBACKS
+from prompts.chechengpt import SYSTEM_PROMPT as CHECHENGPT_PROMPT
+from fallbacks.chechengpt import FALLBACKS as CHECHENGPT_FALLBACKS
 
 
 @dataclass(frozen=True)
@@ -51,6 +53,16 @@ STYLES = {
             'ai': 'ща нахуй, вась, думаю 🗿',
             'image': 'смотрю пикчу, не торопи бля 💀',
             'audio': 'слушаю твой войс, вась, пиздец 😮‍💨',
+        },
+    ),
+    'chechengpt': Style(
+        id='chechengpt', name='chechenGPT', description='ле☝️ братва don🤲 грозный мемный базар',
+        system_prompt=CHECHENGPT_PROMPT,
+        fallbacks=CHECHENGPT_FALLBACKS,
+        statuses={
+            'ai': 'ле☝️ думаю don🤲',
+            'image': 'ле☝️ смотрю пикчу don🤲',
+            'audio': 'брат☝️ слушаю войс don🤲',
         },
     ),
 }
