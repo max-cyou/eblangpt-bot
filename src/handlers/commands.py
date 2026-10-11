@@ -80,4 +80,6 @@ async def register_command_menu(bot):
         types.BotCommand('style', 'выбирай как мне базарить💪'),
         types.BotCommand('stats', 'циферки бота😈 только для админа'),
         types.BotCommand('broadcast', 'рассылка💪 только для админа'),
+        types.BotCommand('ban', 'бан😈 только для админа'),
+        types.BotCommand('unban', 'разбан💪 только для админа'),
     ])

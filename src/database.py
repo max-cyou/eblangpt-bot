@@ -39,6 +39,13 @@ def initialize_database(path):
                 style_id TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS user_bans (
+                user_id INTEGER PRIMARY KEY,
+                reason TEXT NOT NULL,
+                banned_by INTEGER NOT NULL,
+                banned_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS message_styles (
                 scope TEXT NOT NULL,
                 message_id INTEGER NOT NULL,
@@ -105,6 +112,35 @@ def mark_chat_inactive(path, chat_id):
             )
 
 
+def ban_user(path, user_id, reason, banned_by):
+    with _db_lock, closing(sqlite3.connect(path)) as connection:
+        with connection:
+            connection.execute(
+                '''INSERT INTO user_bans (user_id, reason, banned_by, banned_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET
+                    reason = excluded.reason, banned_by = excluded.banned_by,
+                    banned_at = excluded.banned_at''',
+                (user_id, reason, banned_by, _now()),
+            )
+
+
+def get_user_ban(path, user_id):
+    with _db_lock, closing(sqlite3.connect(path)) as connection:
+        return connection.execute(
+            'SELECT reason, banned_by, banned_at FROM user_bans WHERE user_id = ?',
+            (user_id,),
+        ).fetchone()
+
+
+def unban_user(path, user_id):
+    with _db_lock, closing(sqlite3.connect(path)) as connection:
+        with connection:
+            return connection.execute(
+                'DELETE FROM user_bans WHERE user_id = ?', (user_id,),
+            ).rowcount > 0
+
+
 def increment_counter(path, name, amount=1):
     with _db_lock, closing(sqlite3.connect(path)) as connection:
         with connection:
@@ -153,6 +189,9 @@ def get_private_recipient_ids(path):
             SELECT chat_id
             FROM chats
             WHERE chat_type = 'private' AND active = 1
+                AND NOT EXISTS (
+                    SELECT 1 FROM user_bans WHERE user_id = chats.chat_id
+                )
             ORDER BY first_seen
             '''
         ).fetchall()

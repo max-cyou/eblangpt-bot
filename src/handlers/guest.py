@@ -5,6 +5,7 @@ from telebot import types
 import config
 from database import increment_counter
 from services.ai import request_answer
+from services.bans import ban_reply, message_is_banned
 from services.chats import strip_bot_mention
 from services.context import format_user_message, get_audio_attachment, get_image_attachment, get_message_content_text, get_object_field
 from services.errors import REQUEST_ERRORS, failure_details, fallback_text
@@ -58,6 +59,16 @@ def guest_media_source(message, references):
 
 def register_guest_handlers(bot, session):
     async def guest_handler(message):
+        if message_is_banned(message):
+            result = types.InlineQueryResultArticle(
+                id='guest-blocked', title='eblangpt',
+                input_message_content=types.InputRichMessageContent(types.InputRichMessage(markdown=ban_reply())),
+            )
+            try:
+                await telegram_call(bot.answer_guest_query, guest_query_id=message.guest_query_id, result=result)
+            except REQUEST_ERRORS as error:
+                logger.warning('Guest ban reply failed: %s', failure_details(error))
+            return
         references = guest_references(message)
         style = get_message_style(message, references)
         increment_counter(config.DATABASE_PATH, 'guest_requests')

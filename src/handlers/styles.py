@@ -1,5 +1,6 @@
 from telebot import types
 
+from services.bans import ban_reply, user_is_banned
 from services.chats import remember_message
 from services.styles import get_user_style, set_user_style
 from services.telegram import edit_text, telegram_call
@@ -36,6 +37,9 @@ def register_style_handlers(bot):
         )
 
     async def select_style(call):
+        if user_is_banned(call.from_user.id):
+            await telegram_call(bot.answer_callback_query, callback_query_id=call.id, text=ban_reply(), show_alert=True)
+            return
         parts = (call.data or '').split(':')
         if len(parts) != 3 or not parts[1].isdigit():
             await telegram_call(bot.answer_callback_query, callback_query_id=call.id, text='кнопка сломалась😈 открой /style заново вась')
