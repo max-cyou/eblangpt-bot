@@ -6,7 +6,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import config
-from database import initialize_database
+from database import find_guest_response_style, initialize_database, remember_guest_response_style
 from fallbacks.schizo import FALLBACKS
 from handlers.groups import register_group_handlers
 from handlers.guest import register_guest_handlers
@@ -14,6 +14,7 @@ from handlers.media import register_media_handlers
 from handlers.messages import register_message_handlers
 from services.branches import guest_reply_message_id
 from services.styles import get_message_style, set_user_style
+from services.history import get_history
 from styles import get_style
 from tests.helpers import BotTestMixin, make_message
 
@@ -51,27 +52,33 @@ class BranchStyleTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
     def assert_last_prompt(self, style_id):
         self.assertEqual(self.session.calls[-1][1]['json']['messages'][0]['content'], get_style(style_id).system_prompt)
 
-    async def test_group_passive_root_and_replies_keep_initial_style_after_restart(self):
+    async def test_group_owner_style_change_updates_replies_after_restart(self):
         root = make_message('начало ветки', -10, 'group')
         await self.bot.process_new_messages([root])
         self.assertEqual(len(self.session.calls), 0)
         set_user_style(42, 'default')
+        set_user_style(43, 'zoomer')
         initialize_database(config.DATABASE_PATH)
         reply = make_message('вась ответь', -10, 'group', reply_to_message=root.json, **{'from': user(43)})
         await self.bot.process_new_messages([reply])
-        self.assert_last_prompt('schizo')
+        self.assert_last_prompt('default')
         followup = make_message('продолжи', -10, 'group', reply_to_message=self.sent[-1].json, **{'from': user(44)})
         await self.bot.process_new_messages([followup])
-        self.assert_last_prompt('schizo')
-        await self.bot.process_new_messages([make_message('вась новая ветка', -10, 'group', **{'from': user(43)})])
         self.assert_last_prompt('default')
+        await self.bot.process_new_messages([make_message('вась новая ветка', -10, 'group', **{'from': user(43)})])
+        self.assert_last_prompt('zoomer')
 
-    async def test_private_reply_to_bot_keeps_pinned_style(self):
+    async def test_private_reply_to_bot_uses_new_prompt_without_clearing_history(self):
         await self.bot.process_new_messages([make_message('начало')])
         response = self.sent[-1]
+        history = get_history(1)
         set_user_style(42, 'default')
+        self.assertEqual(get_history(1), history)
         await self.bot.process_new_messages([make_message('продолжи', reply_to_message=response.json)])
-        self.assert_last_prompt('schizo')
+        self.assert_last_prompt('default')
+        messages = self.session.calls[-1][1]['json']['messages']
+        self.assertEqual(messages[1:3], history)
+        self.assertEqual(sum(item['role'] == 'system' for item in messages), 1)
         await self.bot.process_new_messages([make_message('отдельный запрос')])
         self.assert_last_prompt('default')
 
@@ -84,8 +91,14 @@ class BranchStyleTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
         await self.bot.process_new_messages([make_message('вась начало', -10, 'supergroup', message_thread_id=90000, is_topic_message=True)])
         await self.bot.process_new_messages([make_message('вась продолжи', -10, 'supergroup', message_thread_id=90000, is_topic_message=True, **{'from': user(43)})])
         self.assert_last_prompt('schizo')
-        await self.bot.process_new_messages([make_message('вась другое', -10, 'supergroup', message_thread_id=90001, is_topic_message=True, **{'from': user(43)})])
+        set_user_style(43, 'zoomer')
+        await self.bot.process_new_messages([make_message('вась еще', -10, 'supergroup', message_thread_id=90000, is_topic_message=True, **{'from': user(43)})])
+        self.assert_last_prompt('schizo')
+        set_user_style(42, 'default')
+        await self.bot.process_new_messages([make_message('вась после смены', -10, 'supergroup', message_thread_id=90000, is_topic_message=True, **{'from': user(43)})])
         self.assert_last_prompt('default')
+        await self.bot.process_new_messages([make_message('вась другое', -10, 'supergroup', message_thread_id=90001, is_topic_message=True, **{'from': user(43)})])
+        self.assert_last_prompt('zoomer')
 
     async def test_attachment_failure_uses_branch_style(self):
         root = make_message('начало', -10, 'group')
@@ -100,25 +113,26 @@ class BranchStyleTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
         root = make_message('начало', -10, 'group', guest_query_id='first')
         await self.bot.process_new_guest_message([root])
         set_user_style(42, 'default')
+        set_user_style(43, 'zoomer')
         initialize_database(config.DATABASE_PATH)
         previous = make_message('bot answer', -10, 'group', message_id=100000, guest_bot_caller_user=user(42), **{'from': user(999, True)})
         await self.bot.process_new_guest_message([make_message('продолжи', -10, 'group', guest_query_id='second', reference_messages=[previous.json], **{'from': user(43)})])
-        self.assert_last_prompt('schizo')
+        self.assert_last_prompt('default')
         previous = make_message('bot answer', -10, 'group', message_id=100001, guest_bot_caller_user=user(43), **{'from': user(999, True)})
         await self.bot.process_new_guest_message([make_message('еще', -10, 'group', guest_query_id='third', reply_to_message=previous.json, **{'from': user(44)})])
-        self.assert_last_prompt('schizo')
-        await self.bot.process_new_guest_message([make_message('новая ветка', -10, 'group', guest_query_id='new', **{'from': user(43)})])
         self.assert_last_prompt('default')
+        await self.bot.process_new_guest_message([make_message('новая ветка', -10, 'group', guest_query_id='new', **{'from': user(43)})])
+        self.assert_last_prompt('zoomer')
 
     async def test_guest_private_participants_share_branch_without_leaking_to_bot_chat(self):
         await self.bot.process_new_guest_message([make_message('начало', 43, 'private', guest_query_id='first')])
         previous = make_message('offline answer', 43, 'private', message_id=200000, guest_bot_caller_user=user(42), **{'from': user(999, True)})
         set_user_style(42, 'default')
         await self.bot.process_new_guest_message([make_message('продолжи', 42, 'private', guest_query_id='second', reply_to_message=previous.json, **{'from': user(43)})])
-        self.assert_last_prompt('schizo')
+        self.assert_last_prompt('default')
         previous = make_message('offline answer', 42, 'private', message_id=300000, guest_bot_caller_user=user(43), **{'from': user(999, True)})
         await self.bot.process_new_guest_message([make_message('еще', 43, 'private', guest_query_id='third', reply_to_message=previous.json)])
-        self.assert_last_prompt('schizo')
+        self.assert_last_prompt('default')
         other = make_message('другой чат', 43, 'private', guest_query_id='third', reply_to_message=previous.json, **{'from': user(44)})
         self.assertEqual(get_message_style(other).id, 'default')
         regular = make_message('обычная личка', 43, 'private', reply_to_message=previous.json, **{'from': user(43)})
@@ -131,7 +145,19 @@ class BranchStyleTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
         set_user_style(42, 'default')
         previous = make_message('offline answer', -10, 'group', message_id=200000, guest_bot_caller_user=user(42), **{'from': user(999, True)})
         await self.bot.process_new_guest_message([make_message('продолжи', -10, 'group', guest_query_id='second', reply_to_message=previous.json, **{'from': user(43)})])
-        self.assert_last_prompt('schizo')
+        self.assert_last_prompt('default')
+
+    async def test_guest_hash_bindings_merge_old_styles_without_affecting_other_owners(self):
+        scope = 'guest-private:42:43'
+        for style in ('schizo', 'default', 'zoomer'):
+            remember_guest_response_style(config.DATABASE_PATH, scope, 43, 'same-answer', 42, style)
+        remember_guest_response_style(config.DATABASE_PATH, scope, 44, 'other-answer', 44, 'default')
+        set_user_style(42, 'zoomer')
+        initialize_database(config.DATABASE_PATH)
+        self.assertEqual(find_guest_response_style(config.DATABASE_PATH, scope, 43, 'same-answer'), (42, 'zoomer'))
+        self.assertEqual(find_guest_response_style(config.DATABASE_PATH, scope, 44, 'other-answer'), (44, 'default'))
+        set_user_style(42, 'schizo')
+        self.assertEqual(find_guest_response_style(config.DATABASE_PATH, scope, 43, 'same-answer'), (42, 'schizo'))
 
     async def test_guest_media_fallback_inherits_style_of_branch(self):
         await self.bot.process_new_guest_message([make_message('начало', -10, 'group', guest_query_id='first')])

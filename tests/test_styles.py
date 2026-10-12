@@ -72,6 +72,18 @@ class StyleHandlerTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(get_user_style(42).id, 'default')
         self.bot.edit_message_text.assert_not_awaited()
 
+    async def test_style_callback_changes_prompt_when_replying_to_existing_branch(self):
+        root = make_message('hello')
+        await self.bot.process_new_messages([root])
+        history = get_history(1)
+        call = SimpleNamespace(id='query', data='style:42:zoomer', from_user=SimpleNamespace(id=42), message=None)
+        await self.bot.callback_query_handlers[0]['function'](call)
+        self.assertEqual(get_history(1), history)
+        await self.bot.process_new_messages([make_message('continue', reply_to_message=root.json)])
+        messages = self.session.calls[-1][1]['json']['messages']
+        self.assertEqual(messages[0], {'role': 'system', 'content': get_style('zoomer').system_prompt})
+        self.assertEqual(messages[1:3], history)
+
     async def test_clear_keeps_selected_style(self):
         set_user_style(42, 'schizo')
         save_exchange(1, 'question', 'answer')

@@ -288,6 +288,23 @@ def set_user_style_id(path, user_id, style_id):
                 ON CONFLICT(user_id) DO UPDATE SET style_id = excluded.style_id''',
                 (user_id, style_id),
             )
+            # Keep branch ownership, but follow the owner's current style.
+            connection.execute(
+                'UPDATE message_styles SET style_id = ? WHERE owner_id = ?',
+                (style_id, user_id),
+            )
+            # Several past styles can share a guest response hash. Merge them
+            # before deleting old bindings to avoid primary-key collisions.
+            connection.execute(
+                '''INSERT OR IGNORE INTO guest_response_styles
+                SELECT scope, caller_id, content_hash, owner_id, ?
+                FROM guest_response_styles WHERE owner_id = ?''',
+                (style_id, user_id),
+            )
+            connection.execute(
+                'DELETE FROM guest_response_styles WHERE owner_id = ? AND style_id != ?',
+                (user_id, style_id),
+            )
 
 
 def get_message_style_binding(path, scope, message_id):
