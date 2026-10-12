@@ -1,5 +1,6 @@
 import sqlite3
 import threading
+import re
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
@@ -16,6 +17,7 @@ def initialize_database(path):
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     with _db_lock, closing(sqlite3.connect(path)) as connection:
         connection.execute('PRAGMA journal_mode=WAL')
+        had_users = connection.execute("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'users'").fetchone()
         with connection:
             connection.executescript(
                 '''
@@ -45,6 +47,13 @@ def initialize_database(path):
                 banned_by INTEGER NOT NULL,
                 banned_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS users (
+                user_id INTEGER PRIMARY KEY,
+                username TEXT COLLATE NOCASE,
+                is_bot INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS users_username ON users(username);
 
             CREATE TABLE IF NOT EXISTS message_styles (
                 scope TEXT NOT NULL,
@@ -79,6 +88,25 @@ def initialize_database(path):
                 ON history(chat_id, thread_id, id);
                 '''
             )
+            if not had_users:
+                # Private chats and the trusted header of stored user turns
+                # contain IDs already observed by the bot. Ignore quoted text.
+                connection.execute(
+                    '''INSERT OR IGNORE INTO users (user_id, username)
+                    SELECT chat_id, username FROM chats WHERE chat_type = 'private' AND chat_id > 0'''
+                )
+                pattern = re.compile(
+                    r'\A<сообщение_(?:из_группы|пользователя|из_guest)>\nимя: [^\n]*\n'
+                    r'username: (@[A-Za-z0-9_]+|нет)\nупоминание: [^\n]*\ntelegram_id: (\d+)\n'
+                )
+                for (content,) in connection.execute("SELECT content FROM history WHERE role = 'user' ORDER BY id DESC"):
+                    match = pattern.match(content)
+                    if match:
+                        username, user_id = match.groups()
+                        connection.execute(
+                            'INSERT OR IGNORE INTO users (user_id, username) VALUES (?, ?)',
+                            (int(user_id), username[1:] if username.startswith('@') else None),
+                        )
     # The database stores chat messages and should be private to its owner.
     Path(path).chmod(0o600)
 
@@ -101,6 +129,37 @@ def remember_chat(path, chat_id, chat_type, username=None, title=None):
                 ''',
                 (chat_id, chat_type, username, title, timestamp, timestamp),
             )
+
+
+def remember_user(path, user_id, username=None, is_bot=False, current=True):
+    username = username.lstrip('@').casefold() if username else None
+    with _db_lock, closing(sqlite3.connect(path)) as connection:
+        with connection:
+            if current:
+                # An observed rename/removal retires the old username. A new
+                # owner of a username also replaces any stale association.
+                if username:
+                    connection.execute('UPDATE users SET username = NULL WHERE username = ? AND user_id != ?', (username, user_id))
+                connection.execute(
+                    '''INSERT INTO users VALUES (?, ?, ?)
+                    ON CONFLICT(user_id) DO UPDATE SET username = excluded.username, is_bot = excluded.is_bot''',
+                    (user_id, username, int(is_bot)),
+                )
+            else:
+                connection.execute('INSERT OR IGNORE INTO users VALUES (?, ?, ?)', (user_id, username, int(is_bot)))
+
+
+def find_user_by_username(path, username):
+    with _db_lock, closing(sqlite3.connect(path)) as connection:
+        rows = connection.execute(
+            'SELECT user_id FROM users WHERE username = ?', (username.lstrip('@').casefold(),),
+        ).fetchall()
+    return rows[0][0] if len(rows) == 1 else None
+
+
+def get_known_user(path, user_id):
+    with _db_lock, closing(sqlite3.connect(path)) as connection:
+        return connection.execute('SELECT username, is_bot FROM users WHERE user_id = ?', (user_id,)).fetchone()
 
 
 def mark_chat_inactive(path, chat_id):

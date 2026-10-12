@@ -12,7 +12,7 @@ class StartupTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
         self.bot.close_session = AsyncMock()
         with patch.object(main, 'AsyncTeleBot', return_value=self.bot):
             await main.main()
-        self.assertEqual(len(self.bot.message_handlers), 15)
+        self.assertEqual(len(self.bot.message_handlers), 16)
         self.assertEqual(len(self.bot.callback_query_handlers), 1)
         self.assertEqual(len(self.bot.guest_message_handlers), 1)
         self.assertEqual(len(self.bot.my_chat_member_handlers), 1)

@@ -1,16 +1,18 @@
 import logging
 import re
 
-from telebot import types
+from telebot import types, util
+from telebot.asyncio_handler_backends import ContinueHandling
 
 import config
-from database import ban_user, unban_user
+from database import ban_user, find_user_by_username, get_known_user, unban_user
 from handlers.admin import is_admin
 from services.bans import ban_reply, message_is_banned
 from services.chats import get_bot_user, group_is_triggered
 from services.context import get_message_content_text
 from services.errors import REQUEST_ERRORS, failure_details
 from services.telegram import send_text, telegram_call
+from services.users import remember_message_users
 
 
 logger = logging.getLogger(__name__)
@@ -23,6 +25,13 @@ def ban_target(message, command):
     parts = args.split(maxsplit=1)
     if parts and parts[0].isascii() and parts[0].isdigit():
         user_id = int(parts[0])
+        reason = parts[1] if len(parts) > 1 else ''
+    elif parts and parts[0].startswith('@'):
+        if not re.fullmatch(r'@[A-Za-z0-9_]{1,32}', parts[0]):
+            raise ValueError('invalid_username')
+        user_id = find_user_by_username(config.DATABASE_PATH, parts[0])
+        if user_id is None:
+            raise ValueError('username_unknown')
         reason = parts[1] if len(parts) > 1 else ''
     elif message.reply_to_message and message.reply_to_message.from_user:
         user_id = message.reply_to_message.from_user.id
@@ -57,13 +66,18 @@ async def ban_handler(message, bot):
         return
     try:
         user_id, reason = ban_target(message, 'ban')
-    except ValueError:
-        await send_text(bot, message, 'пиши `/ban user_id причина` или ответь `/ban причина` на сообщение вась😈 причина — до 1000 символов')
+    except ValueError as error:
+        if str(error) == 'username_unknown':
+            await send_text(bot, message, 'не нашел однозначный ID по этому юзу😈 дай ID или ответь командой на его сообщение вась')
+            return
+        await send_text(bot, message, 'пиши `/ban @username причина`, `/ban user_id причина` или ответь `/ban причина` на сообщение вась😈 причина — до 1000 символов')
         return
     reference = message.reply_to_message
     target = reference.from_user if reference and reference.from_user and reference.from_user.id == user_id else None
     current = await get_bot_user(bot)
-    if user_id in (message.from_user.id, config.ADMIN_USER_ID, current.id) or (target and (target.is_bot or is_admin(reference))):
+    known = get_known_user(config.DATABASE_PATH, user_id)
+    known_admin = known and not config.ADMIN_USER_ID and config.ADMIN_USERNAME and (known[0] or '').casefold() == config.ADMIN_USERNAME
+    if user_id in (message.from_user.id, config.ADMIN_USER_ID, current.id) or (known and (known[1] or known_admin)) or (target and (target.is_bot or is_admin(reference))):
         await send_text(bot, message, 'вась😈 себя админа и ботов не баним')
         return
     ban_user(config.DATABASE_PATH, user_id, reason, message.from_user.id)
@@ -98,14 +112,25 @@ async def unban_handler(message, bot):
         return
     try:
         user_id, _ = ban_target(message, 'unban')
-    except ValueError:
-        await send_text(bot, message, 'пиши `/unban user_id` или ответь `/unban` на сообщение вась😈')
+    except ValueError as error:
+        if str(error) == 'username_unknown':
+            await send_text(bot, message, 'не нашел однозначный ID по этому юзу😈 дай ID или ответь командой на его сообщение вась')
+            return
+        await send_text(bot, message, 'пиши `/unban @username`, `/unban user_id` или ответь `/unban` на сообщение вась😈')
         return
     removed = unban_user(config.DATABASE_PATH, user_id)
     await send_text(bot, message, f'разбанил {user_id}✅' if removed else f'{user_id} и так без бана вась👍')
 
 
 def register_ban_handlers(bot):
+    async def track_users(message):
+        remember_message_users(message)
+        return ContinueHandling()
+
+    bot.register_message_handler(
+        track_users, func=lambda message: True,
+        content_types=list(dict.fromkeys(util.content_type_media + util.content_type_service + ['rich_message'])),
+    )
     # Must precede commands, text and media so blocked messages never reach them.
     bot.register_message_handler(
         blocked_message, func=message_is_banned, pass_bot=True,

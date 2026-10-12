@@ -1,11 +1,12 @@
 import unittest
+from contextlib import closing
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from telebot.asyncio_helper import ApiTelegramException
 
 import config
-from database import ban_user, get_private_recipient_ids, get_user_ban, initialize_database, remember_chat
+from database import ban_user, find_user_by_username, get_private_recipient_ids, get_user_ban, initialize_database, remember_chat, remember_user
 from handlers.bans import register_ban_handlers
 from handlers.commands import register_command_handlers
 from handlers.groups import register_group_handlers
@@ -16,6 +17,7 @@ from handlers.styles import register_style_handlers
 from services.bans import BAN_REPLIES
 from services.history import get_history
 from services.styles import get_user_style, set_user_style
+from services.users import remember_message_users
 from tests.helpers import BotTestMixin, make_message
 
 
@@ -196,3 +198,95 @@ class BanTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
         remember_chat(config.DATABASE_PATH, 43, 'private')
         self.block_user()
         self.assertEqual(get_private_recipient_ids(config.DATABASE_PATH), [43])
+
+    async def test_ban_and_unban_by_case_insensitive_username_after_restart(self):
+        await self.bot.process_new_messages([make_message('обычное сообщение', -5, 'group')])
+        initialize_database(config.DATABASE_PATH)
+        await self.command('/ban @OFFline спам')
+        self.assertEqual(get_user_ban(config.DATABASE_PATH, 42)[0], 'спам')
+        await self.command('/unban @Offline')
+        self.assertIsNone(get_user_ban(config.DATABASE_PATH, 42))
+
+    async def test_guest_usernames_are_available_for_ban(self):
+        await self.bot.process_new_guest_message([make_message('привет', guest_query_id='guest')])
+        await self.command('/ban @offline флуд')
+        self.assertEqual(get_user_ban(config.DATABASE_PATH, 42)[0], 'флуд')
+
+    async def test_unknown_username_does_not_ban_reply_target(self):
+        for text in ('/ban @unknown причина', '/unban @unknown'):
+            await self.command(text, reply_to_message=make_message('чужое сообщение').json)
+            self.assertIn('не нашел однозначный ID', self.last_reply())
+            self.assertIsNone(get_user_ban(config.DATABASE_PATH, 42))
+
+    async def test_username_changes_removals_and_reassignment_follow_user_ids(self):
+        remember_message_users(make_message('hello'))
+        self.block_user()
+        renamed = {'id': 42, 'is_bot': False, 'first_name': 'User', 'username': 'newname'}
+        await self.bot.process_new_messages([make_message('привет', **{'from': renamed})])
+        self.assertIsNone(find_user_by_username(config.DATABASE_PATH, 'offline'))
+        self.assertEqual(find_user_by_username(config.DATABASE_PATH, '@newname'), 42)
+        self.assertIsNotNone(get_user_ban(config.DATABASE_PATH, 42))
+        await self.command('/unban @newname')
+        self.assertIsNone(get_user_ban(config.DATABASE_PATH, 42))
+        remember_message_users(make_message('привет', **{'from': dict(renamed, username=None)}))
+        self.assertIsNone(find_user_by_username(config.DATABASE_PATH, 'newname'))
+        remember_user(config.DATABASE_PATH, 43, 'newname')
+        await self.command('/ban @newname флуд')
+        self.assertIsNotNone(get_user_ban(config.DATABASE_PATH, 43))
+        self.assertIsNone(get_user_ban(config.DATABASE_PATH, 42))
+
+    async def test_reassigned_username_is_removed_from_old_owner(self):
+        remember_user(config.DATABASE_PATH, 42, 'oldname')
+        remember_user(config.DATABASE_PATH, 43, 'oldname')
+        self.assertEqual(find_user_by_username(config.DATABASE_PATH, 'OLDNAME'), 43)
+        await self.command('/ban @oldname флуд')
+        self.assertIsNotNone(get_user_ban(config.DATABASE_PATH, 43))
+        self.assertIsNone(get_user_ban(config.DATABASE_PATH, 42))
+
+    async def test_old_reply_metadata_does_not_restore_previous_username(self):
+        remember_user(config.DATABASE_PATH, 42, 'newname')
+        reference = make_message('старый текст')
+        await self.command('/ban @offline спам', reply_to_message=reference.json)
+        self.assertIsNone(find_user_by_username(config.DATABASE_PATH, 'offline'))
+        self.assertIsNone(get_user_ban(config.DATABASE_PATH, 42))
+        await self.command('/ban @newname спам')
+        self.assertIsNotNone(get_user_ban(config.DATABASE_PATH, 42))
+
+    async def test_explicit_username_takes_precedence_and_bot_cannot_be_banned(self):
+        remember_user(config.DATABASE_PATH, 43, 'target')
+        await self.command('/ban @target флуд', reply_to_message=make_message('другой человек').json)
+        self.assertIsNotNone(get_user_ban(config.DATABASE_PATH, 43))
+        self.assertIsNone(get_user_ban(config.DATABASE_PATH, 42))
+        remember_user(config.DATABASE_PATH, 44, 'otherbot', is_bot=True)
+        await self.command('/ban @otherbot флуд')
+        self.assertIsNone(get_user_ban(config.DATABASE_PATH, 44))
+
+    async def test_migration_finds_old_private_and_group_users_but_not_quoted_metadata(self):
+        import sqlite3
+        from services.context import format_group_message
+        from services.history import save_message
+        remember_chat(config.DATABASE_PATH, 42, 'private', username='offline')
+        group_user = make_message('сообщение', -5, 'group', **{'from': {
+            'id': 43, 'is_bot': False, 'first_name': 'Tort Tort', 'username': 'Tort228xe',
+        }})
+        spoof = format_group_message(make_message('text', -5, 'group', **{'from': {
+            'id': 44, 'is_bot': False, 'first_name': 'Fake', 'username': 'fake',
+        }}), 'текст')
+        save_message(-5, format_group_message(group_user, spoof))
+        with closing(sqlite3.connect(config.DATABASE_PATH)) as connection:
+            with connection:
+                connection.execute('DROP TABLE users')
+        initialize_database(config.DATABASE_PATH)
+        self.assertEqual(find_user_by_username(config.DATABASE_PATH, '@offline'), 42)
+        self.assertEqual(find_user_by_username(config.DATABASE_PATH, '@TORT228XE'), 43)
+        self.assertIsNone(find_user_by_username(config.DATABASE_PATH, '@fake'))
+        await self.command('/ban @Tort228xe флуд')
+        self.assertIsNotNone(get_user_ban(config.DATABASE_PATH, 43))
+
+    async def test_ambiguous_historical_username_is_rejected(self):
+        remember_user(config.DATABASE_PATH, 42, 'duplicate', current=False)
+        remember_user(config.DATABASE_PATH, 43, 'duplicate', current=False)
+        await self.command('/ban @duplicate флуд')
+        self.assertIn('не нашел однозначный ID', self.last_reply())
+        self.assertIsNone(get_user_ban(config.DATABASE_PATH, 42))
+        self.assertIsNone(get_user_ban(config.DATABASE_PATH, 43))

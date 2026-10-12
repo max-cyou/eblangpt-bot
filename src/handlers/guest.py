@@ -13,6 +13,7 @@ from services.media import attachment_kind, prepare_media_prompt
 from services.branches import remember_guest_reply_style, remember_guest_reply_text
 from services.styles import format_style_answer, get_message_style, style_status_text
 from services.telegram import edit_text, telegram_call, text_chunks
+from services.users import remember_message_users
 
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,7 @@ def guest_media_source(message, references):
 
 def register_guest_handlers(bot, session):
     async def guest_handler(message):
+        remember_message_users(message)
         if message_is_banned(message):
             result = types.InlineQueryResultArticle(
                 id='guest-blocked', title='eblangpt',
