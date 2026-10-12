@@ -138,3 +138,50 @@ class GroupBanTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
         await self.bot.process_new_messages([make_message('вась вопрос', -5, 'group')])
         self.bot.edit_message_text.assert_not_awaited()
         self.assertEqual(get_history(-5), [])
+
+    async def test_guest_admin_can_ban_and_unban_without_membership_or_ai(self):
+        for text in ('@offlinebot /bangroup', '@offlinebot /unbangroup'):
+            await self.bot.process_new_guest_message([make_message(text, -5, 'group', guest_query_id='moderation', **{'from': ADMIN})])
+            answer = self.bot.answer_guest_query.call_args.kwargs['result'].input_message_content.rich_message.markdown
+            if text.endswith('/bangroup'):
+                self.assertIsNotNone(get_group_ban(config.DATABASE_PATH, -5))
+                self.assertIn('группа в чс', answer)
+                initialize_database(config.DATABASE_PATH)
+            else:
+                self.assertIsNone(get_group_ban(config.DATABASE_PATH, -5))
+                self.assertIn('группа разбанена', answer)
+        self.assertEqual(self.session.calls, [])
+        self.bot.send_message.assert_not_awaited()
+        self.bot.edit_message_text.assert_not_awaited()
+
+    async def test_guest_non_admin_cannot_change_group_blacklist(self):
+        await self.bot.process_new_guest_message([make_message('@offlinebot /bangroup', -5, 'group', guest_query_id='guest')])
+        self.assertIsNone(get_group_ban(config.DATABASE_PATH, -5))
+        ban_group(config.DATABASE_PATH, -5, 500)
+        await self.bot.process_new_guest_message([make_message('@offlinebot /unbangroup', -5, 'group', guest_query_id='guest')])
+        self.assertIsNotNone(get_group_ban(config.DATABASE_PATH, -5))
+        answer = self.bot.answer_guest_query.call_args.kwargs['result'].input_message_content.rich_message.markdown
+        self.assertIn('только для админа', answer)
+        self.assertEqual(self.session.calls, [])
+
+    async def test_guest_moderation_uses_actual_caller_instead_of_reference_author(self):
+        await self.bot.process_new_guest_message([make_message(
+            '@offlinebot /bangroup', -5, 'group', guest_query_id='guest',
+            **{'from': ADMIN}, guest_bot_caller_user={'id': 42, 'is_bot': False, 'first_name': 'User'},
+        )])
+        self.assertIsNone(get_group_ban(config.DATABASE_PATH, -5))
+        await self.bot.process_new_guest_message([make_message(
+            '@offlinebot /bangroup', -5, 'group', guest_query_id='guest', guest_bot_caller_user=ADMIN,
+        )])
+        self.assertEqual(get_group_ban(config.DATABASE_PATH, -5)[0], 500)
+
+    async def test_guest_group_commands_reject_private_chats_arguments_and_wrong_mentions(self):
+        for text in ('@offlinebot /bangroup extra', '@otherbot /bangroup', '/bangroup@otherbot'):
+            await self.bot.process_new_guest_message([make_message(text, -5, 'group', guest_query_id='guest', **{'from': ADMIN})])
+            self.assertIsNone(get_group_ban(config.DATABASE_PATH, -5))
+        await self.bot.process_new_guest_message([make_message('@offlinebot /bangroup', guest_query_id='private', **{'from': ADMIN})])
+        self.assertIsNone(get_group_ban(config.DATABASE_PATH, 1))
+        await self.bot.process_new_guest_message([make_message('/bangroup@OFFLINEBOT', -5, 'supergroup', guest_query_id='guest', **{'from': ADMIN})])
+        self.assertIsNotNone(get_group_ban(config.DATABASE_PATH, -5))
+        await self.bot.process_new_guest_message([make_message('/unbangroup', -5, 'supergroup', guest_query_id='guest', **{'from': ADMIN})])
+        self.assertIsNone(get_group_ban(config.DATABASE_PATH, -5))

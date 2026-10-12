@@ -3,6 +3,7 @@ import logging
 from telebot import types
 
 import config
+from handlers.group_bans import handle_guest_group_ban
 from database import increment_counter
 from services.ai import request_answer
 from services.bans import ban_reply, message_group_is_banned, message_is_banned
@@ -60,6 +61,8 @@ def guest_media_source(message, references):
 
 def register_guest_handlers(bot, session):
     async def guest_handler(message):
+        if await handle_guest_group_ban(message, bot):
+            return
         if message_group_is_banned(message):
             return
         remember_message_users(message)

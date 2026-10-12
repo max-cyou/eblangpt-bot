@@ -8,6 +8,7 @@ from telebot.asyncio_helper import ApiException, ApiTelegramException
 import config
 from database import get_private_recipient_ids, get_statistics, increment_counter, mark_chat_inactive
 from services.chats import remember_message
+from services.context import get_object_field
 from services.errors import failure_details
 from services.telegram import send_text, telegram_call, text_chunks
 
@@ -17,12 +18,16 @@ broadcast_lock = asyncio.Lock()
 
 
 def is_admin(message):
-    sender = message.from_user
+    return is_admin_user(message.from_user)
+
+
+def is_admin_user(sender):
     if not sender:
         return False
     if config.ADMIN_USER_ID:
-        return sender.id == config.ADMIN_USER_ID
-    return bool(config.ADMIN_USERNAME and sender.username and sender.username.casefold() == config.ADMIN_USERNAME)
+        return get_object_field(sender, 'id') == config.ADMIN_USER_ID
+    username = get_object_field(sender, 'username')
+    return bool(config.ADMIN_USERNAME and username and username.casefold() == config.ADMIN_USERNAME)
 
 
 def extract_broadcast_text(message):
