@@ -73,9 +73,29 @@ async def unbangroup_handler(message, bot):
     await group_ban_command(message, bot, remove=True)
 
 
+async def mentioned_group_ban_handler(message, bot):
+    text = get_message_content_text(message)
+    command = GUEST_GROUP_COMMAND.match(text)
+    current = await get_bot_user(bot)
+    for mention in (command[1], command[3]):
+        if mention and mention.casefold() != (current.username or '').casefold():
+            return
+    answer = group_ban_text(
+        message, message.from_user, command[2].casefold() == 'unbangroup',
+        bool(text[command.end():].strip()),
+    )
+    await telegram_call(bot.send_message, text=answer, parse_mode=None, **reply_options(message))
+
+
 def register_group_ban_handlers(bot):
     bot.register_message_handler(bangroup_handler, commands=['bangroup'], pass_bot=True)
     bot.register_message_handler(unbangroup_handler, commands=['unbangroup'], pass_bot=True)
+    # Mention-prefixed commands are ordinary messages when the bot is a member.
+    # Consume them before both the blacklist guard and the AI group handler.
+    bot.register_message_handler(
+        mentioned_group_ban_handler, pass_bot=True, content_types=['text', 'rich_message'],
+        func=lambda message: bool(GUEST_GROUP_COMMAND.match(get_message_content_text(message))),
+    )
 
     async def ignore_group(message):
         return

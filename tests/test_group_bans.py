@@ -154,6 +154,25 @@ class GroupBanTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
         self.bot.send_message.assert_not_awaited()
         self.bot.edit_message_text.assert_not_awaited()
 
+    async def test_mention_prefixed_commands_in_member_group_do_not_trigger_ai(self):
+        await self.command('@offlinebot /bangroup')
+        self.assertIsNotNone(get_group_ban(config.DATABASE_PATH, -5))
+        self.assertEqual(self.session.calls, [])
+        await self.command('@offlinebot /unbangroup')
+        self.assertIsNone(get_group_ban(config.DATABASE_PATH, -5))
+        self.assertEqual(self.session.calls, [])
+        self.assertIn('группа разбанена', self.bot.send_message.call_args.kwargs['text'])
+
+    async def test_mention_prefixed_group_command_checks_permissions_and_bot_identity(self):
+        await self.bot.process_new_messages([make_message('@offlinebot /bangroup', -5, 'group')])
+        self.assertIsNone(get_group_ban(config.DATABASE_PATH, -5))
+        self.assertEqual(self.session.calls, [])
+        await self.command('@otherbot /bangroup')
+        self.assertIsNone(get_group_ban(config.DATABASE_PATH, -5))
+        self.assertEqual(self.session.calls, [])
+        await self.command('@OFFLINEBOT /bangroup')
+        self.assertIsNotNone(get_group_ban(config.DATABASE_PATH, -5))
+
     async def test_guest_non_admin_cannot_change_group_blacklist(self):
         await self.bot.process_new_guest_message([make_message('@offlinebot /bangroup', -5, 'group', guest_query_id='guest')])
         self.assertIsNone(get_group_ban(config.DATABASE_PATH, -5))
