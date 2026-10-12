@@ -82,4 +82,5 @@ async def register_command_menu(bot):
         types.BotCommand('broadcast', 'рассылка💪 только для админа'),
         types.BotCommand('ban', 'бан😈 только для админа'),
         types.BotCommand('unban', 'разбан💪 только для админа'),
+        types.BotCommand('banlist', 'список банов😈 только для админа'),
     ])

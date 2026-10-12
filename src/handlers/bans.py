@@ -5,18 +5,18 @@ from telebot import types, util
 from telebot.asyncio_handler_backends import ContinueHandling
 
 import config
-from database import ban_user, find_user_by_username, get_known_user, unban_user
+from database import ban_user, find_user_by_username, get_known_user, get_user_bans, unban_user
 from handlers.admin import is_admin
 from services.bans import ban_reply, message_is_banned
 from services.chats import get_bot_user, group_is_triggered
 from services.context import get_message_content_text
 from services.errors import REQUEST_ERRORS, failure_details
-from services.telegram import send_text, telegram_call
+from services.telegram import reply_options, send_text, telegram_call, text_chunks
 from services.users import remember_message_users
 
 
 logger = logging.getLogger(__name__)
-BOT_COMMAND = re.compile(r'^/(start|help|style|clear|stats|broadcast|ban|unban)(?:@([A-Za-z0-9_]+))?(?:\s|$)', re.I)
+BOT_COMMAND = re.compile(r'^/(start|help|style|clear|stats|broadcast|ban|unban|banlist)(?:@([A-Za-z0-9_]+))?(?:\s|$)', re.I)
 
 
 def ban_target(message, command):
@@ -129,6 +129,39 @@ async def unban_handler(message, bot):
     await send_text(bot, message, text)
 
 
+async def banlist_handler(message, bot):
+    if not is_admin(message):
+        await send_text(bot, message, 'тебе нельзя😈 список банов только для админа вась')
+        return
+    args = (message.text or '').split()[1:]
+    try:
+        if len(args) > 1 or (args and (not args[0].isascii() or not args[0].isdigit())):
+            raise ValueError
+        page = int(args[0]) if args else 1
+        if not 0 < page < 2 ** 53:
+            raise ValueError
+    except ValueError:
+        await send_text(bot, message, 'пиши `/banlist` или `/banlist номер_страницы` вась😈')
+        return
+    total, rows = get_user_bans(config.DATABASE_PATH, offset=(page - 1) * 10)
+    pages = max(1, (total + 9) // 10)
+    if page > pages:
+        await send_text(bot, message, f'такой страницы нет😈 есть с 1 по {pages} вась')
+        return
+    if not total:
+        await send_text(bot, message, 'банов нет вась👍 все на свободе✅')
+        return
+    lines = [f'слыш😈 в бане {total} челов — страница {page}/{pages}']
+    for user_id, username, reason in rows:
+        label = f'{user_id} — @{username}' if username else str(user_id)
+        lines.append(f'{label}\nпричина: {reason}')
+    if page < pages:
+        lines.append(f'дальше: /banlist {page + 1}')
+    # Reasons are user-supplied text, so keep their markup literal.
+    for chunk in text_chunks('\n\n'.join(lines)):
+        await telegram_call(bot.send_message, text=chunk, parse_mode=None, **reply_options(message))
+
+
 def register_ban_handlers(bot):
     async def track_users(message):
         remember_message_users(message)
@@ -146,3 +179,4 @@ def register_ban_handlers(bot):
     )
     bot.register_message_handler(ban_handler, commands=['ban'], pass_bot=True)
     bot.register_message_handler(unban_handler, commands=['unban'], pass_bot=True)
+    bot.register_message_handler(banlist_handler, commands=['banlist'], pass_bot=True)

@@ -308,3 +308,56 @@ class BanTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
         await self.command('/unban 42')
         self.assertIsNone(get_user_ban(config.DATABASE_PATH, 42))
         self.assertIn('разбан все равно действует', self.last_reply())
+
+    async def test_banlist_only_admin_and_empty_list(self):
+        await self.bot.process_new_messages([make_message('/banlist')])
+        self.assertIn('только для админа', self.last_reply())
+        self.bot.send_message.assert_not_awaited()
+        await self.command('/banlist')
+        self.assertIn('банов нет', self.last_reply())
+
+    async def test_banlist_shows_ids_current_usernames_and_literal_reasons(self):
+        remember_user(config.DATABASE_PATH, 42, 'offline')
+        self.block_user()
+        ban_user(config.DATABASE_PATH, 43, '**причина**\nвторая строка', 500)
+        await self.command('/banlist')
+        kwargs = self.bot.send_message.call_args.kwargs
+        self.assertIsNone(kwargs['parse_mode'])
+        self.assertIn('42 — @offline\nпричина: спам', kwargs['text'])
+        self.assertIn('43\nпричина: **причина**\nвторая строка', kwargs['text'])
+        await self.command('/unban 42')
+        await self.command('/banlist')
+        text = self.bot.send_message.call_args.kwargs['text']
+        self.assertNotIn('42 — @offline', text)
+        self.assertIn('в бане 1 челов', text)
+
+    async def test_banlist_pagination_and_invalid_pages(self):
+        for user_id in range(100, 112):
+            self.block_user(user_id)
+        await self.command('/banlist')
+        first = self.bot.send_message.call_args.kwargs['text']
+        self.assertIn('страница 1/2', first)
+        self.assertIn('/banlist 2', first)
+        self.assertEqual(first.count('причина:'), 10)
+        await self.command('/banlist 2')
+        second = self.bot.send_message.call_args.kwargs['text']
+        self.assertIn('страница 2/2', second)
+        self.assertEqual(second.count('причина:'), 2)
+        self.assertNotIn('дальше:', second)
+        for args in ('0', '-1', 'bad', '1 2', '9007199254740992', '3'):
+            self.bot.send_message.reset_mock()
+            await self.command('/banlist ' + args)
+            self.bot.send_message.assert_not_awaited()
+
+    async def test_banlist_splits_long_unicode_reasons_within_telegram_limit(self):
+        for user_id in range(100, 110):
+            ban_user(config.DATABASE_PATH, user_id, '🥀' * 1000, 500)
+        await self.command('/banlist')
+        self.assertGreater(self.bot.send_message.await_count, 1)
+        parts = []
+        for call in self.bot.send_message.call_args_list:
+            text = call.kwargs['text']
+            self.assertLessEqual(len(text.encode('utf-16-le')) // 2, 4096)
+            self.assertIsNone(call.kwargs['parse_mode'])
+            parts.append(text)
+        self.assertEqual(''.join(parts).count('🥀'), 10000)

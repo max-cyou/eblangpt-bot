@@ -192,6 +192,18 @@ def get_user_ban(path, user_id):
         ).fetchone()
 
 
+def get_user_bans(path, offset=0, limit=10):
+    with _db_lock, closing(sqlite3.connect(path)) as connection:
+        total = connection.execute('SELECT COUNT(*) FROM user_bans').fetchone()[0]
+        rows = connection.execute(
+            '''SELECT b.user_id, u.username, b.reason FROM user_bans b
+            LEFT JOIN users u ON u.user_id = b.user_id
+            ORDER BY b.banned_at DESC, b.user_id DESC LIMIT ? OFFSET ?''',
+            (limit, offset),
+        ).fetchall()
+    return total, rows
+
+
 def unban_user(path, user_id):
     with _db_lock, closing(sqlite3.connect(path)) as connection:
         with connection:
