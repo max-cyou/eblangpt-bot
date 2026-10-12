@@ -4,6 +4,7 @@ from telebot import types
 
 import config
 from handlers.group_bans import handle_guest_group_ban
+from handlers.bans import handle_user_ban_command
 from database import increment_counter
 from services.ai import request_answer
 from services.bans import ban_reply, message_group_is_banned, message_is_banned
@@ -66,6 +67,8 @@ def register_guest_handlers(bot, session):
         if message_group_is_banned(message):
             return
         remember_message_users(message)
+        if await handle_user_ban_command(message, bot):
+            return
         if message_is_banned(message):
             result = types.InlineQueryResultArticle(
                 id='guest-blocked', title='eblangpt',

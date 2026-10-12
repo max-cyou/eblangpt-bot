@@ -361,3 +361,84 @@ class BanTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(call.kwargs['parse_mode'])
             parts.append(text)
         self.assertEqual(''.join(parts).count('🥀'), 10000)
+
+    async def test_guest_ban_and_unban_by_username_send_notifications_without_ai(self):
+        remember_user(config.DATABASE_PATH, 42, 'target')
+        for command, expected in (('/ban @target флуд', 'забанил'), ('/unban @target', 'разбанил')):
+            await self.bot.process_new_guest_message([make_message(
+                '@offlinebot ' + command, -5, 'group', guest_query_id='moderation', **{'from': ADMIN},
+            )])
+            answer = self.bot.answer_guest_query.call_args.kwargs['result'].input_message_content.rich_message.markdown
+            self.assertIn(expected + ' 42', answer)
+            self.assertEqual(self.bot.send_message.call_args.kwargs['chat_id'], 42)
+        self.assertIsNone(get_user_ban(config.DATABASE_PATH, 42))
+        self.assertEqual(self.session.calls, [])
+        self.bot.edit_message_text.assert_not_awaited()
+
+    async def test_member_group_mention_prefixed_user_bans_are_consumed_before_ai(self):
+        await self.bot.process_new_messages([make_message('@offlinebot /ban 42 флуд', -5, 'group', **{'from': ADMIN})])
+        self.assertIsNotNone(get_user_ban(config.DATABASE_PATH, 42))
+        await self.bot.process_new_messages([make_message('@offlinebot /unban 42', -5, 'group', **{'from': ADMIN})])
+        self.assertIsNone(get_user_ban(config.DATABASE_PATH, 42))
+        self.assertEqual(self.session.calls, [])
+
+    async def test_guest_user_ban_auth_uses_actual_caller(self):
+        await self.bot.process_new_guest_message([make_message(
+            '@offlinebot /ban 43 флуд', guest_query_id='guest', **{'from': ADMIN},
+            guest_bot_caller_user={'id': 42, 'is_bot': False, 'first_name': 'Other'},
+        )])
+        self.assertIsNone(get_user_ban(config.DATABASE_PATH, 43))
+        answer = self.bot.answer_guest_query.call_args.kwargs['result'].input_message_content.rich_message.markdown
+        self.assertIn('только админ', answer)
+        await self.bot.process_new_guest_message([make_message(
+            '@offlinebot /ban 43 флуд', guest_query_id='guest', guest_bot_caller_user=ADMIN,
+        )])
+        self.assertEqual(get_user_ban(config.DATABASE_PATH, 43)[1], 500)
+        self.assertEqual(self.session.calls, [])
+
+    async def test_guest_reply_ban_and_private_guest_unban_work(self):
+        await self.bot.process_new_guest_message([make_message(
+            '@offlinebot /ban флуд', -5, 'group', guest_query_id='guest',
+            reply_to_message=make_message('чужой текст').json, **{'from': ADMIN},
+        )])
+        self.assertIsNotNone(get_user_ban(config.DATABASE_PATH, 42))
+        await self.bot.process_new_guest_message([make_message('/unban 42', guest_query_id='guest', **{'from': ADMIN})])
+        self.assertIsNone(get_user_ban(config.DATABASE_PATH, 42))
+        self.assertEqual(self.session.calls, [])
+
+    async def test_guest_missing_target_is_handled_without_ai(self):
+        for command in ('/ban', '/ban @unknown флуд', '/unban @unknown'):
+            await self.bot.process_new_guest_message([make_message('@offlinebot ' + command, guest_query_id='guest', **{'from': ADMIN})])
+        self.assertEqual(self.bot.answer_guest_query.await_count, 3)
+        self.assertEqual(self.session.calls, [])
+        self.bot.send_message.assert_not_awaited()
+
+    async def test_guest_ban_notification_failure_does_not_send_regular_group_message(self):
+        self.bot.send_message.side_effect = ApiTelegramException(
+            'sendMessage', None, {'error_code': 403, 'description': 'blocked'},
+        )
+        await self.bot.process_new_guest_message([make_message(
+            '@offlinebot /ban флуд', -5, 'group', guest_query_id='guest',
+            reply_to_message=make_message('чужой текст').json, **{'from': ADMIN},
+        )])
+        self.assertIsNotNone(get_user_ban(config.DATABASE_PATH, 42))
+        self.assertEqual(self.bot.send_message.await_count, 1)
+        self.assertEqual(self.bot.send_message.call_args.kwargs['chat_id'], 42)
+        answer = self.bot.answer_guest_query.call_args.kwargs['result'].input_message_content.rich_message.markdown
+        self.assertIn('бан все равно действует', answer)
+        self.assertEqual(self.session.calls, [])
+
+    async def test_user_commands_addressed_to_another_bot_are_ignored(self):
+        await self.command('@otherbot /ban 42 флуд')
+        await self.command('/ban@otherbot 42 флуд')
+        self.assertIsNone(get_user_ban(config.DATABASE_PATH, 42))
+        self.assertEqual(self.session.calls, [])
+        self.bot.send_message.assert_not_awaited()
+
+    async def test_guest_admin_can_unban_when_original_author_is_banned(self):
+        self.block_user()
+        await self.bot.process_new_guest_message([make_message(
+            '@offlinebot /unban 42', guest_query_id='guest', guest_bot_caller_user=ADMIN,
+        )])
+        self.assertIsNone(get_user_ban(config.DATABASE_PATH, 42))
+        self.assertEqual(self.session.calls, [])
