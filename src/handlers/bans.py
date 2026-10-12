@@ -119,7 +119,14 @@ async def unban_handler(message, bot):
         await send_text(bot, message, 'пиши `/unban @username`, `/unban user_id` или ответь `/unban` на сообщение вась😈')
         return
     removed = unban_user(config.DATABASE_PATH, user_id)
-    await send_text(bot, message, f'разбанил {user_id}✅' if removed else f'{user_id} и так без бана вась👍')
+    text = f'разбанил {user_id}✅' if removed else f'{user_id} и так без бана вась👍'
+    if removed:
+        try:
+            await telegram_call(bot.send_message, chat_id=user_id, text='✅ вы были разблокированы\n\nслыш😈 можешь снова базарить вась💪', parse_mode=None)
+        except REQUEST_ERRORS as error:
+            logger.warning('Unban notification failed: %s', failure_details(error))
+            text += '\nуведомление не доставлено😈 разбан все равно действует'
+    await send_text(bot, message, text)
 
 
 def register_ban_handlers(bot):

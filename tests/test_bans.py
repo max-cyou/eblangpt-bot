@@ -290,3 +290,21 @@ class BanTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
         self.assertIn('не нашел однозначный ID', self.last_reply())
         self.assertIsNone(get_user_ban(config.DATABASE_PATH, 42))
         self.assertIsNone(get_user_ban(config.DATABASE_PATH, 43))
+
+    async def test_unban_notifies_user_only_when_ban_removed(self):
+        self.block_user()
+        await self.command('/unban 42')
+        self.bot.send_message.assert_awaited_once_with(
+            chat_id=42, text='✅ вы были разблокированы\n\nслыш😈 можешь снова базарить вась💪', parse_mode=None,
+        )
+        await self.command('/unban 42')
+        self.assertEqual(self.bot.send_message.await_count, 1)
+
+    async def test_unban_notification_failure_keeps_user_unblocked(self):
+        self.block_user()
+        self.bot.send_message.side_effect = ApiTelegramException(
+            'sendMessage', None, {'error_code': 403, 'description': 'blocked'},
+        )
+        await self.command('/unban 42')
+        self.assertIsNone(get_user_ban(config.DATABASE_PATH, 42))
+        self.assertIn('разбан все равно действует', self.last_reply())
