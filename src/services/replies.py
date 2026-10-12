@@ -5,6 +5,7 @@ import config
 from database import increment_counter
 from services.ai import request_answer
 from services.chats import remember_message
+from services.bans import message_group_is_banned
 from services.context import format_user_message
 from services.errors import REQUEST_ERRORS, failure_details, fallback_text
 from services.history import get_chat_lock, get_history, save_exchange
@@ -21,6 +22,8 @@ async def answer_message(bot, session, message, text, status=None, lock_held=Fal
         text = format_user_message(message, text)
     thread = message.message_thread_id
     async with (nullcontext() if lock_held else get_chat_lock(message.chat.id, thread)):
+        if message_group_is_banned(message):
+            return
         history = get_history(message.chat.id, thread)
         style = style or get_message_style(message)
         increment_counter(config.DATABASE_PATH, 'generations')
@@ -39,4 +42,6 @@ async def answer_message(bot, session, message, text, status=None, lock_held=Fal
             await finish_status(bot, message, status, fallback_text(error, style=style))
             return
         await finish_status(bot, message, status, answer)
+        if message_group_is_banned(message):
+            return
         save_exchange(message.chat.id, text, answer, thread)

@@ -1,6 +1,6 @@
 from telebot import types
 
-from services.bans import ban_reply, user_is_banned
+from services.bans import ban_reply, chat_is_banned, user_is_banned
 from services.chats import remember_message
 from services.styles import get_user_style, set_user_style
 from services.telegram import edit_text, telegram_call
@@ -37,6 +37,9 @@ def register_style_handlers(bot):
         )
 
     async def select_style(call):
+        if call.message and chat_is_banned(call.message.chat):
+            await telegram_call(bot.answer_callback_query, callback_query_id=call.id, text='эта группа в чс😈', show_alert=True)
+            return
         if user_is_banned(call.from_user.id):
             await telegram_call(bot.answer_callback_query, callback_query_id=call.id, text=ban_reply(), show_alert=True)
             return

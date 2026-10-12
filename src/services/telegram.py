@@ -7,6 +7,7 @@ from telebot.asyncio_helper import ApiException, ApiTelegramException
 
 from services.errors import failure_details
 from services.branches import remember_reply_style
+from services.bans import message_group_is_banned
 
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,8 @@ def text_chunks(text, limit=2000):
 
 
 async def send_text(bot, message, text):
+    if message_group_is_banned(message):
+        return None
     sent = None
     for chunk in text_chunks(text):
         try:
@@ -75,6 +78,8 @@ async def edit_text(bot, text, **target):
 
 
 async def show_status(bot, message, text=STREAM_STATUS_TEXT):
+    if message_group_is_banned(message):
+        return None
     if message.chat.type == 'private':
         try:
             await bot.send_rich_message_draft(
@@ -94,6 +99,8 @@ async def show_status(bot, message, text=STREAM_STATUS_TEXT):
 
 
 async def update_status(bot, message, status, text):
+    if message_group_is_banned(message):
+        return
     try:
         if message.chat.type == 'private':
             await bot.send_rich_message_draft(
@@ -108,6 +115,8 @@ async def update_status(bot, message, status, text):
 
 
 async def finish_status(bot, message, status, text):
+    if message_group_is_banned(message):
+        return None
     if status is None:
         return await send_text(bot, message, text)
     chunks = text_chunks(text)

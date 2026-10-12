@@ -48,6 +48,12 @@ def initialize_database(path):
                 banned_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS group_bans (
+                chat_id INTEGER PRIMARY KEY,
+                banned_by INTEGER NOT NULL,
+                banned_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY,
                 username TEXT COLLATE NOCASE,
@@ -182,6 +188,30 @@ def ban_user(path, user_id, reason, banned_by):
                     banned_at = excluded.banned_at''',
                 (user_id, reason, banned_by, _now()),
             )
+
+
+def ban_group(path, chat_id, banned_by):
+    with _db_lock, closing(sqlite3.connect(path)) as connection:
+        with connection:
+            connection.execute(
+                '''INSERT INTO group_bans VALUES (?, ?, ?)
+                ON CONFLICT(chat_id) DO UPDATE SET
+                    banned_by = excluded.banned_by, banned_at = excluded.banned_at''',
+                (chat_id, banned_by, _now()),
+            )
+
+
+def get_group_ban(path, chat_id):
+    with _db_lock, closing(sqlite3.connect(path)) as connection:
+        return connection.execute(
+            'SELECT banned_by, banned_at FROM group_bans WHERE chat_id = ?', (chat_id,),
+        ).fetchone()
+
+
+def unban_group(path, chat_id):
+    with _db_lock, closing(sqlite3.connect(path)) as connection:
+        with connection:
+            return connection.execute('DELETE FROM group_bans WHERE chat_id = ?', (chat_id,)).rowcount > 0
 
 
 def get_user_ban(path, user_id):

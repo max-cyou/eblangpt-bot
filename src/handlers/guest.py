@@ -5,7 +5,7 @@ from telebot import types
 import config
 from database import increment_counter
 from services.ai import request_answer
-from services.bans import ban_reply, message_is_banned
+from services.bans import ban_reply, message_group_is_banned, message_is_banned
 from services.chats import strip_bot_mention
 from services.context import format_user_message, get_audio_attachment, get_image_attachment, get_message_content_text, get_object_field
 from services.errors import REQUEST_ERRORS, failure_details, fallback_text
@@ -60,6 +60,8 @@ def guest_media_source(message, references):
 
 def register_guest_handlers(bot, session):
     async def guest_handler(message):
+        if message_group_is_banned(message):
+            return
         remember_message_users(message)
         if message_is_banned(message):
             result = types.InlineQueryResultArticle(
@@ -92,6 +94,8 @@ def register_guest_handlers(bot, session):
             return
 
         async def update(text):
+            if message_group_is_banned(message):
+                return
             try:
                 await edit_text(bot, text[:2000], inline_message_id=sent.inline_message_id)
                 remember_guest_reply_text(message, text[:2000])
@@ -121,6 +125,8 @@ def register_guest_handlers(bot, session):
         if len(chunks) > 1:
             answer = chunks[0] + '\n\nответ обрезан по лимиту Telegram'
         try:
+            if message_group_is_banned(message):
+                return
             await edit_text(bot, answer, inline_message_id=sent.inline_message_id)
             remember_guest_reply_text(message, answer)
         except REQUEST_ERRORS as error:

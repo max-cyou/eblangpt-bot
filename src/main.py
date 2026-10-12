@@ -9,6 +9,7 @@ from database import initialize_database
 from handlers.commands import register_command_handlers, register_command_menu
 from handlers.admin import register_admin_handlers
 from handlers.bans import register_ban_handlers
+from handlers.group_bans import register_group_ban_handlers
 from handlers.events import register_event_handlers
 from handlers.guest import register_guest_handlers
 from handlers.groups import register_group_handlers
@@ -26,6 +27,7 @@ async def main():
 
     try:
         async with aiohttp.ClientSession(timeout=timeout) as session:
+            register_group_ban_handlers(bot)
             register_ban_handlers(bot)
             register_command_handlers(bot)
             register_style_handlers(bot)
