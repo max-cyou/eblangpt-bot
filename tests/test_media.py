@@ -1,7 +1,8 @@
 import asyncio
 import unittest
+import aiohttp
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import config
 from services import media
@@ -100,26 +101,50 @@ class MediaTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
         self.assertEqual([call[1]['json']['model'] for call in self.session.calls], ['first', 'first', 'second', 'second', 'first', 'first'])
         self.bot.download_file.assert_awaited_once()
 
-    async def test_vision_repeated_failures_stop_at_shared_deadline(self):
+    async def test_vision_retry_window_starts_at_first_error_and_does_not_reset(self):
         self.session.responses = [Response(status=404)]
-        with patch.object(config, 'OPENROUTER_API_KEY', 'offline-key'), patch.object(media, 'IMAGE_RECOGNITION_TIMEOUT', 0.02):
-            with self.assertRaises(TimeoutError):
+        clock = SimpleNamespace(monotonic=Mock(side_effect=[100, 105, 110]))
+        with patch.object(config, 'OPENROUTER_API_KEY', 'offline-key'), patch.object(media, 'time', clock):
+            with self.assertRaises(aiohttp.ClientResponseError) as raised:
                 await recognize_image(self.bot, self.session, SimpleNamespace(file_id='photo', file_size=20))
-        self.assertGreater(len(self.session.calls), 2)
-        attempts = len(self.session.calls)
-        await asyncio.sleep(0)
-        self.assertEqual(len(self.session.calls), attempts)
+        self.assertEqual(raised.exception.status, 404)
+        self.assertEqual(len(self.session.calls), 3)
 
-    async def test_vision_deadline_interrupts_stalled_request(self):
-        async def stalled_json():
-            await asyncio.sleep(1)
+    async def test_vision_slow_first_attempt_succeeds(self):
+        description = 'На изображении находится большая красная машина'
+        async def slow_json():
+            await asyncio.sleep(0.03)
+            return {'choices': [{'message': {'content': description}}]}
 
         response = Response()
-        response.json = stalled_json
+        response.json = slow_json
         self.session.responses = [response]
-        started = asyncio.get_running_loop().time()
-        with patch.object(config, 'OPENROUTER_API_KEY', 'offline-key'), patch.object(media, 'IMAGE_RECOGNITION_TIMEOUT', 0.02):
-            with self.assertRaises(TimeoutError):
-                await recognize_image(self.bot, self.session, SimpleNamespace(file_id='photo', file_size=20))
-        self.assertLess(asyncio.get_running_loop().time() - started, 0.5)
+        with patch.object(config, 'OPENROUTER_API_KEY', 'offline-key'), patch.object(media, 'IMAGE_RETRY_WINDOW', 0.01):
+            self.assertEqual(await recognize_image(self.bot, self.session, SimpleNamespace(file_id='photo', file_size=20)), description)
         self.assertEqual(len(self.session.calls), 1)
+
+    async def test_vision_successful_retry_can_finish_after_window(self):
+        description = 'На изображении находится большая красная машина'
+        async def slow_json():
+            await asyncio.sleep(0.03)
+            return {'choices': [{'message': {'content': description}}]}
+
+        response = Response()
+        response.json = slow_json
+        self.session.responses = [Response(status=503), response]
+        with patch.object(config, 'OPENROUTER_API_KEY', 'offline-key'), patch.object(media, 'IMAGE_RETRY_WINDOW', 0.01):
+            self.assertEqual(await recognize_image(self.bot, self.session, SimpleNamespace(file_id='photo', file_size=20)), description)
+        self.assertEqual(len(self.session.calls), 2)
+
+    async def test_vision_failed_retry_after_window_returns_error(self):
+        async def slow_failure():
+            await asyncio.sleep(0.03)
+            raise ValueError('Invalid vision response')
+
+        response = Response()
+        response.json = slow_failure
+        self.session.responses = [Response(status=503), response]
+        with patch.object(config, 'OPENROUTER_API_KEY', 'offline-key'), patch.object(media, 'IMAGE_RETRY_WINDOW', 0.01):
+            with self.assertRaisesRegex(ValueError, 'Invalid vision response'):
+                await recognize_image(self.bot, self.session, SimpleNamespace(file_id='photo', file_size=20))
+        self.assertEqual(len(self.session.calls), 2)

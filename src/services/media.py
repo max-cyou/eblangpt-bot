@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import os
+import time
 
 import aiohttp
 
@@ -22,7 +23,7 @@ TEXT_FILE_EXTENSIONS = {
     '.md', '.php', '.ps1', '.py', '.rb', '.rs', '.sh', '.sql', '.swift', '.tex',
     '.toml', '.ts', '.tsx', '.txt', '.xml', '.yaml', '.yml',
 }
-IMAGE_RECOGNITION_TIMEOUT = 10
+IMAGE_RETRY_WINDOW = 10
 
 
 def attachment_kind(message):
@@ -50,8 +51,7 @@ async def download_attachment(bot, attachment, limit, kind):
 
 
 async def recognize_image(bot, session, photo, question=''):
-    async with asyncio.timeout(IMAGE_RECOGNITION_TIMEOUT):
-        return await _recognize_image(bot, session, photo, question)
+    return await _recognize_image(bot, session, photo, question)
 
 
 async def _recognize_image(bot, session, photo, question):
@@ -101,14 +101,22 @@ async def _recognize_image(bot, session, photo, question):
             raise ValueError('Vision description is empty')
         return description
 
+    retry_started = None
     while True:
         for model in models:
             payload['model'] = model
-            try:
-                return await retry_once(request_description)
-            except (aiohttp.ClientError, TimeoutError, ValueError):
-                # The shared deadline also interrupts a stalled request.
-                await asyncio.sleep(0)
+            for attempt in range(2):
+                try:
+                    return await request_description()
+                except (aiohttp.ClientError, TimeoutError, ValueError):
+                    now = time.monotonic()
+                    if retry_started is None:
+                        retry_started = now
+                    elif now - retry_started >= IMAGE_RETRY_WINDOW:
+                        raise
+                    # Only failures end the retry window; let an in-flight
+                    # request finish even when the window has elapsed.
+                    await asyncio.sleep(0)
 
 
 async def transcribe_audio(bot, session, audio):
