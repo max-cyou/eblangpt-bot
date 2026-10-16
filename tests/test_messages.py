@@ -1,4 +1,5 @@
 import asyncio
+import json
 import unittest
 from unittest.mock import AsyncMock, patch
 import config
@@ -108,6 +109,52 @@ class MessageTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
 
 
 class StreamTests(unittest.IsolatedAsyncioTestCase):
+    async def test_json_answer_drops_end_marker_and_repetition(self):
+        for marker in ('</формирую_ответ>', '</формируя_ответ>', '</ФОРМИРУЮ_ОТВЕТ>'):
+            response = Response({'choices': [{'message': {'content': 'ответ 😈 вась ' + marker + 'correctCorrect' * 100}}]})
+            self.assertEqual(await request_answer('test', Session([response])), 'ответ 😈 вась')
+
+    async def test_split_marker_never_reaches_stream_updates(self):
+        answer = 'готовый ответ ' * 10
+        for marker in ('</формирую_ответ>', '</формируя_ответ>'):
+            for split in range(1, len(marker)):
+                chunks = [answer + marker[:split], marker[split:] + 'Correct' * 100]
+                lines = ['data: ' + json.dumps({'choices': [{'delta': {'content': chunk}}]}) for chunk in chunks]
+                # Reading past the marker would fail; the response must close
+                # immediately rather than consuming the repetition tail.
+                lines.append('data: {"error":"must not be read"}')
+                response = Response(lines=lines)
+                update = AsyncMock()
+                with patch.object(Response, '__aexit__', new_callable=AsyncMock) as close:
+                    self.assertEqual(await request_answer('test', Session([response]), update_callback=update), answer.strip())
+                    close.assert_awaited_once()
+                self.assertTrue(update.await_count)
+                for call in update.await_args_list:
+                    self.assertEqual(call.args[0].strip(), answer.strip())
+
+    async def test_old_assistant_artifacts_are_not_sent_back_to_model(self):
+        history = [
+            {'role': 'user', 'content': 'что значит </формирую_ответ>Correct'},
+            {'role': 'assistant', 'content': 'старый ответ </формирую_ответ>CorrectCorrect'},
+        ]
+        session = Session()
+        await request_answer('test', session, history)
+        messages = session.calls[0][1]['json']['messages']
+        self.assertEqual(messages[1], history[0])
+        self.assertEqual(messages[2]['content'], 'старый ответ')
+        self.assertIn('CorrectCorrect', history[1]['content'])
+
+    async def test_normal_code_markup_and_correct_are_preserved(self):
+        answer = '<u>correct</u>\n```python\nprint("CorrectCorrect")\n```\nß <'
+        response = Response({'choices': [{'message': {'content': answer}}]})
+        self.assertEqual(await request_answer('test', Session([response])), answer)
+
+    async def test_marker_without_answer_retries(self):
+        response = Response({'choices': [{'message': {'content': '</формирую_ответ>CorrectCorrect'}}]})
+        session = Session([response, Response()])
+        self.assertEqual(await request_answer('test', session), 'offline answer')
+        self.assertEqual(len(session.calls), 2)
+
     async def test_reasoning_effort_is_configurable(self):
         for effort in ('none', ''):
             session = Session()

@@ -1,6 +1,8 @@
 import asyncio
 import json
+import re
 import time
+from contextlib import aclosing
 
 import config
 from styles import get_style
@@ -8,6 +10,34 @@ from services.retry import retry_once
 
 
 request_slots = asyncio.Semaphore(config.MAX_CONCURRENT_REQUESTS)
+ANSWER_END_ARTIFACTS = ('</формирую_ответ>', '</формируя_ответ>')
+ANSWER_END_PATTERN = re.compile('|'.join(map(re.escape, ANSWER_END_ARTIFACTS)), re.IGNORECASE)
+
+
+def filter_answer_artifacts(text, partial=False):
+    """Drop observed model end markers and their trailing generation garbage."""
+    match = ANSWER_END_PATTERN.search(text)
+    if match:
+        return text[:match.start()].rstrip(), True
+    if partial:
+        # A tag can span SSE chunks. Hold back its unfinished prefix so it
+        # cannot briefly appear in a Telegram draft.
+        for size in range(min(len(text), max(map(len, ANSWER_END_ARTIFACTS)) - 1), 0, -1):
+            if any(marker.startswith(text[-size:].casefold()) for marker in ANSWER_END_ARTIFACTS):
+                return text[:-size], False
+    return text, False
+
+
+def clean_answer_history(history):
+    result = []
+    for message in history or []:
+        if message.get('role') == 'assistant':
+            content, _ = filter_answer_artifacts(message['content'])
+            if not content.strip():
+                continue
+            message = dict(message, content=content)
+        result.append(message)
+    return result
 
 
 def response_text(result):
@@ -25,7 +55,7 @@ async def stream_answer(query, session, history=None, system_prompt=None):
         'model': config.AI_MODEL,
         'messages': [
             {'role': 'system', 'content': get_style().system_prompt if system_prompt is None else system_prompt},
-            *(history or []),
+            *clean_answer_history(history),
             {'role': 'user', 'content': query},
         ],
         'max_tokens': config.AI_MAX_TOKENS,
@@ -72,17 +102,20 @@ async def request_answer(query, session, history=None, update_callback=None, sys
 
 async def _request_answer(query, session, history=None, update_callback=None, system_prompt=None):
     parts = []
-    length = 0
     last_length = 0
     last_update = 0
-    async for chunk in stream_answer(query, session, history, system_prompt):
-        parts.append(chunk)
-        length += len(chunk)
-        now = time.monotonic()
-        if update_callback and length - last_length >= 80 and now - last_update >= 0.8:
-            await update_callback(''.join(parts))
-            last_update, last_length = now, length
-    answer = ''.join(parts).strip()
+    async with aclosing(stream_answer(query, session, history, system_prompt)) as stream:
+        async for chunk in stream:
+            parts.append(chunk)
+            partial, finished = filter_answer_artifacts(''.join(parts), partial=True)
+            now = time.monotonic()
+            if update_callback and len(partial) - last_length >= 80 and now - last_update >= 0.8:
+                await update_callback(partial)
+                last_update, last_length = now, len(partial)
+            if finished:
+                break
+    answer, _ = filter_answer_artifacts(''.join(parts))
+    answer = answer.strip()
     if not answer:
         raise ValueError('Provider returned an empty answer')
     return answer
