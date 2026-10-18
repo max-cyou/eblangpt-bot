@@ -7,11 +7,11 @@ from telebot.asyncio_handler_backends import ContinueHandling
 
 import config
 from database import ban_user, find_user_by_username, get_known_user, get_user_bans, unban_user
-from handlers.admin import is_admin
 from services.bans import ban_reply, message_is_banned, user_is_banned
 from services.chats import get_bot_user, group_is_triggered
 from services.context import get_message_content_text, get_object_field
 from services.errors import REQUEST_ERRORS, failure_details
+from services.permissions import is_admin
 from services.telegram import reply_options, send_text, telegram_call, text_chunks
 from services.users import remember_message_users
 

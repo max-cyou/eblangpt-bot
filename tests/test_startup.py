@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 import main
+from middlewares.admin import AdminMiddleware
 from tests.helpers import BotTestMixin
 
 
@@ -16,6 +17,8 @@ class StartupTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.bot.callback_query_handlers), 1)
         self.assertEqual(len(self.bot.guest_message_handlers), 1)
         self.assertEqual(len(self.bot.my_chat_member_handlers), 1)
+        self.assertEqual(len(self.bot.middlewares), 1)
+        self.assertIsInstance(self.bot.middlewares[0], AdminMiddleware)
         self.bot.set_my_commands.assert_awaited_once()
         self.bot.close_session.assert_awaited_once()
         self.bot.infinity_polling.assert_awaited_once_with(allowed_updates=['message', 'guest_message', 'my_chat_member', 'callback_query'])

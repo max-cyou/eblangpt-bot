@@ -5,7 +5,7 @@ from telebot import types, util
 
 import config
 from database import ban_group, unban_group
-from handlers.admin import is_admin_user
+from services.permissions import is_admin_user
 from services.chats import get_bot_user
 from services.bans import message_group_is_banned
 from services.context import get_message_content_text, get_object_field

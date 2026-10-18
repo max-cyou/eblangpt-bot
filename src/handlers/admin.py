@@ -7,27 +7,14 @@ from telebot.asyncio_helper import ApiException, ApiTelegramException
 
 import config
 from database import get_private_recipient_ids, get_statistics, increment_counter, mark_chat_inactive
+from middlewares.admin import AdminMiddleware
 from services.chats import remember_message
-from services.context import get_object_field
 from services.errors import failure_details
 from services.telegram import send_text, telegram_call, text_chunks
 
 
 logger = logging.getLogger(__name__)
 broadcast_lock = asyncio.Lock()
-
-
-def is_admin(message):
-    return is_admin_user(message.from_user)
-
-
-def is_admin_user(sender):
-    if not sender:
-        return False
-    if config.ADMIN_USER_ID:
-        return get_object_field(sender, 'id') == config.ADMIN_USER_ID
-    username = get_object_field(sender, 'username')
-    return bool(config.ADMIN_USERNAME and username and username.casefold() == config.ADMIN_USERNAME)
 
 
 def extract_broadcast_text(message):
@@ -51,9 +38,6 @@ async def broadcast_item(bot, chat_id, message, text):
 
 async def stats_handler(message, bot):
     remember_message(message)
-    if not is_admin(message):
-        await send_text(bot, message, 'тебе нельзя😈 статистика не твоя вась')
-        return
     stats = get_statistics(config.DATABASE_PATH)
     fields = (
         ('пользователей', 'private_users'), ('активных для рассылки', 'active_private_users'),
@@ -70,9 +54,6 @@ async def stats_handler(message, bot):
 
 async def broadcast_handler(message, bot):
     remember_message(message)
-    if not is_admin(message):
-        await send_text(bot, message, 'иди гуляй😈 рассылка только для админа')
-        return
     if message.chat.type != 'private':
         await send_text(bot, message, 'рассылку запускай в лс👍')
         return
@@ -110,5 +91,6 @@ async def broadcast_handler(message, bot):
 
 
 def register_admin_handlers(bot):
+    bot.setup_middleware(AdminMiddleware(bot))
     bot.register_message_handler(stats_handler, commands=['stats'], pass_bot=True)
     bot.register_message_handler(broadcast_handler, commands=['broadcast'], pass_bot=True)

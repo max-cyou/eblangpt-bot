@@ -5,12 +5,13 @@ from unittest.mock import AsyncMock, patch
 from telebot.asyncio_helper import ApiTelegramException
 
 import config
-from database import get_private_recipient_ids, get_statistics, remember_chat
+from database import ban_group, ban_user, get_private_recipient_ids, get_statistics, remember_chat
 from handlers.admin import register_admin_handlers
 from handlers.commands import register_command_handlers
 from handlers.events import register_event_handlers
 from handlers.guest import register_guest_handlers
 from services.history import get_history
+from services.bans import BAN_REPLIES
 from tests.helpers import BotTestMixin, Response, make_message
 
 
@@ -37,6 +38,35 @@ class AdminGuestTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
         with patch.object(config, 'ADMIN_USER_ID', 42):
             await self.bot.process_new_messages([make_message('/stats')])
             self.assertIn('статистика', self.bot.send_rich_message.call_args.kwargs['rich_message'].markdown)
+
+    async def test_middleware_stops_denied_commands_before_business_logic(self):
+        with patch.multiple(config, ADMIN_USER_ID=500, ADMIN_USERNAME='offline'), \
+             patch('handlers.admin.get_statistics') as statistics, \
+             patch('handlers.admin.get_private_recipient_ids') as recipients:
+            for command in ('/stats', '/stats@offlinebot', '/broadcast forbidden', '/broadcast@offlinebot forbidden'):
+                await self.bot.process_new_messages([make_message(command)])
+            statistics.assert_not_called()
+            recipients.assert_not_called()
+        self.assertEqual(self.bot.send_rich_message.await_count, 4)
+        self.bot.copy_message.assert_not_awaited()
+
+    async def test_middleware_keeps_username_fallback(self):
+        with patch.multiple(config, ADMIN_USER_ID=0, ADMIN_USERNAME='offline'):
+            sender = {'id': 42, 'is_bot': False, 'first_name': 'Admin', 'username': 'OfFlInE'}
+            await self.bot.process_new_messages([make_message('/stats', **{'from': sender})])
+        self.assertIn('**статистика', self.bot.send_rich_message.call_args.kwargs['rich_message'].markdown)
+
+    async def test_middleware_keeps_banned_user_refusal_and_group_silence(self):
+        ban_user(config.DATABASE_PATH, 42, 'test', 500)
+        with patch.object(config, 'ADMIN_USER_ID', 500):
+            await self.bot.process_new_messages([make_message('/stats')])
+            self.assertIn(self.bot.send_rich_message.call_args.kwargs['rich_message'].markdown, BAN_REPLIES)
+            self.bot.send_rich_message.reset_mock()
+            ban_group(config.DATABASE_PATH, -5, 500)
+            await self.bot.process_new_messages([make_message('/broadcast test', -5, 'group')])
+            self.bot.send_rich_message.assert_not_awaited()
+            await self.bot.process_new_messages([make_message('/stats@otherbot', -6, 'group')])
+            self.bot.send_rich_message.assert_not_awaited()
 
     async def test_broadcast_blocked_recipient_and_retry(self):
         remember_chat(config.DATABASE_PATH, 500, 'private')
