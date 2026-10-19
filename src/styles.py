@@ -7,6 +7,8 @@ from fallbacks.default import FALLBACKS as DEFAULT_FALLBACKS
 from fallbacks.schizo import FALLBACKS as SCHIZO_FALLBACKS
 from prompts.zoomer import SYSTEM_PROMPT as ZOOMER_PROMPT
 from fallbacks.zoomer import FALLBACKS as ZOOMER_FALLBACKS
+from prompts.emoji import SYSTEM_PROMPT as EMOJI_PROMPT
+from fallbacks.emoji import FALLBACKS as EMOJI_FALLBACKS
 
 
 @dataclass(frozen=True)
@@ -51,6 +53,16 @@ STYLES = {
             'ai': 'ща нахуй, вась, думаю 🗿',
             'image': 'смотрю пикчу, не торопи бля 💀',
             'audio': 'слушаю твой войс, вась, пиздец 😮‍💨',
+        },
+    ),
+    'emoji': Style(
+        id='emoji', name='эмодзи-еблан', description='тот же еблан но вместо слов только эмодзи',
+        system_prompt=EMOJI_PROMPT,
+        fallbacks=EMOJI_FALLBACKS,
+        statuses={
+            'ai': '🧠⚙️😈',
+            'image': '🖼️👀😈',
+            'audio': '🎧👂😈',
         },
     ),
 }

@@ -1,0 +1,17 @@
+FALLBACKS = {
+    'image_too_large': '🫵🖼️🐘😤🤏',
+    'audio_too_large': '🫵🎙️🐘😤🤏',
+    'document_too_large': '🫵📄🐘😤🤏',
+    'document_not_text': '📄🤨🚫📝👈',
+    'vision_not_configured': '👁️🔌🚫😤📝👈',
+    'audio_not_configured': '👂🔌🚫😤📝👈',
+    'timeout': '🧠🐌😤⏳🔄',
+    'rate_limit': '👥🚧😤⏳',
+    'access': '🤖🔒🖕😤',
+    'server': '🖥️💥🤦😤🔄',
+    'connection': '📡❌🤦🔄',
+    'image': '🖼️👀🤨🤷🔄',
+    'audio': '🎙️👂🤨🤷🔄',
+    'document': '📄👀💥🤦🔄',
+    'ai': '🧠💨🤦😈🔄',
+}

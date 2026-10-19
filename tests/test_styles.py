@@ -72,6 +72,21 @@ class StyleHandlerTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
         self.assertEqual(get_user_style(42).id, 'default')
         self.bot.edit_message_text.assert_not_awaited()
 
+    async def test_emoji_style_can_be_selected_and_used_in_private_and_guest(self):
+        await self.bot.process_new_messages([make_message('/style')])
+        menu = self.bot.send_message.call_args.kwargs['reply_markup']
+        self.assertTrue(any(button.callback_data == 'style:42:emoji' for row in menu.keyboard for button in row))
+        select = self.bot.callback_query_handlers[0]['function']
+        await select(SimpleNamespace(id='query', data='style:42:emoji', from_user=SimpleNamespace(id=42), message=None))
+        answer = '🫵🤡😈'
+        self.session.responses = [Response({'choices': [{'message': {'content': answer}}]})]
+        await self.bot.process_new_messages([make_message('привет')])
+        await self.bot.process_new_guest_message([make_message('привет', guest_query_id='guest')])
+        for _, arguments in self.session.calls:
+            self.assertEqual(arguments['json']['messages'][0]['content'], get_style('emoji').system_prompt)
+        self.assertEqual(self.bot.send_rich_message.call_args.kwargs['rich_message'].markdown, answer)
+        self.assertEqual(self.bot.edit_message_text.call_args.kwargs['rich_message'].markdown, answer)
+
     async def test_style_callback_changes_prompt_when_replying_to_existing_branch(self):
         root = make_message('hello')
         await self.bot.process_new_messages([root])
