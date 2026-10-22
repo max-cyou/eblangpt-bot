@@ -15,24 +15,22 @@ ANSWER_END_PATTERN = re.compile('|'.join(map(re.escape, ANSWER_END_ARTIFACTS)), 
 
 
 def filter_answer_artifacts(text, partial=False):
-    """Drop observed model end markers and their trailing generation garbage."""
-    match = ANSWER_END_PATTERN.search(text)
-    if match:
-        return text[:match.start()].rstrip(), True
+    """Remove observed model markers while preserving the surrounding text."""
+    text = ANSWER_END_PATTERN.sub('', text)
     if partial:
         # A tag can span SSE chunks. Hold back its unfinished prefix so it
         # cannot briefly appear in a Telegram draft.
         for size in range(min(len(text), max(map(len, ANSWER_END_ARTIFACTS)) - 1), 0, -1):
             if any(marker.startswith(text[-size:].casefold()) for marker in ANSWER_END_ARTIFACTS):
-                return text[:-size], False
-    return text, False
+                return text[:-size]
+    return text
 
 
 def clean_answer_history(history):
     result = []
     for message in history or []:
         if message.get('role') == 'assistant':
-            content, _ = filter_answer_artifacts(message['content'])
+            content = filter_answer_artifacts(message['content'])
             if not content.strip():
                 continue
             message = dict(message, content=content)
@@ -107,15 +105,12 @@ async def _request_answer(query, session, history=None, update_callback=None, sy
     async with aclosing(stream_answer(query, session, history, system_prompt)) as stream:
         async for chunk in stream:
             parts.append(chunk)
-            partial, finished = filter_answer_artifacts(''.join(parts), partial=True)
+            partial = filter_answer_artifacts(''.join(parts), partial=True)
             now = time.monotonic()
             if update_callback and len(partial) - last_length >= 80 and now - last_update >= 0.8:
                 await update_callback(partial)
                 last_update, last_length = now, len(partial)
-            if finished:
-                break
-    answer, _ = filter_answer_artifacts(''.join(parts))
-    answer = answer.strip()
+    answer = filter_answer_artifacts(''.join(parts)).strip()
     if not answer:
         raise ValueError('Provider returned an empty answer')
     return answer
