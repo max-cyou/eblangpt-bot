@@ -109,28 +109,29 @@ class MessageTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
 
 
 class StreamTests(unittest.IsolatedAsyncioTestCase):
-    async def test_json_answer_drops_end_marker_and_repetition(self):
+    async def test_json_answer_removes_all_markers_and_preserves_surrounding_text(self):
         for marker in ('</формирую_ответ>', '</формируя_ответ>', '</ФОРМИРУЮ_ОТВЕТ>'):
-            response = Response({'choices': [{'message': {'content': 'ответ 😈 вась ' + marker + 'correctCorrect' * 100}}]})
-            self.assertEqual(await request_answer('test', Session([response])), 'ответ 😈 вась')
+            response = Response({'choices': [{'message': {'content': 'ответ 😈 вась ' + marker + 'correctCorrect' * 100 + marker + ' конец'}}]})
+            self.assertEqual(await request_answer('test', Session([response])), 'ответ 😈 вась ' + 'correctCorrect' * 100 + ' конец')
 
     async def test_split_marker_never_reaches_stream_updates(self):
         answer = 'готовый ответ ' * 10
         for marker in ('</формирую_ответ>', '</формируя_ответ>'):
             for split in range(1, len(marker)):
-                chunks = [answer + marker[:split], marker[split:] + 'Correct' * 100]
+                tail = 'Correct' * 100
+                chunks = [answer + marker[:split], marker[split:] + tail, ' продолжение']
                 lines = ['data: ' + json.dumps({'choices': [{'delta': {'content': chunk}}]}) for chunk in chunks]
-                # Reading past the marker would fail; the response must close
-                # immediately rather than consuming the repetition tail.
-                lines.append('data: {"error":"must not be read"}')
+                lines.append('data: [DONE]')
                 response = Response(lines=lines)
                 update = AsyncMock()
                 with patch.object(Response, '__aexit__', new_callable=AsyncMock) as close:
-                    self.assertEqual(await request_answer('test', Session([response]), update_callback=update), answer.strip())
+                    self.assertEqual(await request_answer('test', Session([response]), update_callback=update), answer + tail + ' продолжение')
                     close.assert_awaited_once()
                 self.assertTrue(update.await_count)
                 for call in update.await_args_list:
-                    self.assertEqual(call.args[0].strip(), answer.strip())
+                    self.assertNotIn('<', call.args[0])
+                    self.assertNotIn('формир', call.args[0])
+                    self.assertTrue((answer + tail + ' продолжение').startswith(call.args[0]))
 
     async def test_old_assistant_artifacts_are_not_sent_back_to_model(self):
         history = [
@@ -141,7 +142,7 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
         await request_answer('test', session, history)
         messages = session.calls[0][1]['json']['messages']
         self.assertEqual(messages[1], history[0])
-        self.assertEqual(messages[2]['content'], 'старый ответ')
+        self.assertEqual(messages[2]['content'], 'старый ответ CorrectCorrect')
         self.assertIn('CorrectCorrect', history[1]['content'])
 
     async def test_normal_code_markup_and_correct_are_preserved(self):
@@ -150,7 +151,7 @@ class StreamTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await request_answer('test', Session([response])), answer)
 
     async def test_marker_without_answer_retries(self):
-        response = Response({'choices': [{'message': {'content': '</формирую_ответ>CorrectCorrect'}}]})
+        response = Response({'choices': [{'message': {'content': '</формирую_ответ></формируя_ответ>'}}]})
         session = Session([response, Response()])
         self.assertEqual(await request_answer('test', session), 'offline answer')
         self.assertEqual(len(session.calls), 2)
