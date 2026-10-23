@@ -375,6 +375,14 @@ def delete_history(path, chat_id, thread_id=0):
             connection.execute('DELETE FROM history WHERE chat_id = ? AND thread_id = ?', (chat_id, thread_id))
 
 
+def get_style_statistics(path):
+    """Count each user's explicitly selected current style once."""
+    with _db_lock, closing(sqlite3.connect(path)) as connection:
+        return dict(connection.execute(
+            'SELECT style_id, COUNT(*) FROM user_settings GROUP BY style_id'
+        ))
+
+
 def get_user_style_id(path, user_id):
     with _db_lock, closing(sqlite3.connect(path)) as connection:
         row = connection.execute('SELECT style_id FROM user_settings WHERE user_id = ?', (user_id,)).fetchone()

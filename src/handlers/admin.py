@@ -6,7 +6,8 @@ from telebot import types
 from telebot.asyncio_helper import ApiException, ApiTelegramException
 
 import config
-from database import get_private_recipient_ids, get_statistics, increment_counter, mark_chat_inactive
+from database import get_private_recipient_ids, get_statistics, get_style_statistics, increment_counter, mark_chat_inactive
+from styles import STYLES
 from middlewares.admin import AdminMiddleware
 from services.chats import remember_message
 from services.errors import failure_details
@@ -49,6 +50,14 @@ async def stats_handler(message, bot):
         ('рассылок', 'broadcasts'), ('доставлено в рассылках', 'broadcast_deliveries'),
     )
     text = '**статистика eblangpt**\n\n' + '\n'.join(f'{title}: {stats.get(key, 0)}' for title, key in fields)
+    style_counts = get_style_statistics(config.DATABASE_PATH)
+    text += '\n\n**выбранные стили**\n' + '\n'.join(
+        f'{style.name}: {style_counts.get(style.id, 0)}' for style in STYLES.values()
+    )
+    removed_count = sum(count for style_id, count in style_counts.items() if style_id not in STYLES)
+    if removed_count:
+        text += f'\nудалённые стили: {removed_count}'
+    text += '\nучтён текущий выбор каждого юзера😈 кто не выбирал стиль — сюда не входит'
     await send_text(bot, message, text)
 
 
