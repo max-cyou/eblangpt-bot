@@ -3,6 +3,7 @@ import json
 import re
 import time
 from contextlib import aclosing
+from difflib import SequenceMatcher
 
 import config
 from styles import get_style
@@ -12,6 +13,29 @@ from services.retry import retry_once
 request_slots = asyncio.Semaphore(config.MAX_CONCURRENT_REQUESTS)
 ANSWER_END_ARTIFACTS = ('</формирую_ответ>', '</формируя_ответ>')
 ANSWER_END_PATTERN = re.compile('|'.join(map(re.escape, ANSWER_END_ARTIFACTS)), re.IGNORECASE)
+EXTRA_MARKER_PATTERN = re.compile(r'</extra\?>?', re.IGNORECASE)
+STREAM_MARKERS = (*ANSWER_END_ARTIFACTS, '</extra?', '</extra?>')
+
+
+def remove_extra_duplicates(text, partial=False):
+    parts = EXTRA_MARKER_PATTERN.split(text)
+    if partial and len(parts) > 1:
+        # Keep the extra segment buffered until we can distinguish a repeated
+        # answer from genuinely new content.
+        return parts[0]
+    kept = [parts[0]]
+    for part in parts[1:]:
+        previous = re.sub(r'\s|\ufe0f', '', kept[-1])
+        candidate = re.sub(r'\s|\ufe0f', '', part)
+        if not candidate:
+            continue
+        duplicate = candidate == previous or (
+            min(len(previous), len(candidate)) >= 40
+            and SequenceMatcher(None, previous, candidate, autojunk=False).ratio() >= 0.97
+        )
+        if not duplicate:
+            kept.append(part)
+    return ''.join(kept)
 
 
 def filter_answer_artifacts(text, partial=False):
@@ -20,10 +44,11 @@ def filter_answer_artifacts(text, partial=False):
     if partial:
         # A tag can span SSE chunks. Hold back its unfinished prefix so it
         # cannot briefly appear in a Telegram draft.
-        for size in range(min(len(text), max(map(len, ANSWER_END_ARTIFACTS)) - 1), 0, -1):
-            if any(marker.startswith(text[-size:].casefold()) for marker in ANSWER_END_ARTIFACTS):
-                return text[:-size]
-    return text
+        for size in range(min(len(text), max(map(len, STREAM_MARKERS)) - 1), 0, -1):
+            if any(marker.startswith(text[-size:].casefold()) for marker in STREAM_MARKERS):
+                text = text[:-size]
+                break
+    return remove_extra_duplicates(text, partial)
 
 
 def clean_answer_history(history):

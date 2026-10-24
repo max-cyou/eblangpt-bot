@@ -7,7 +7,7 @@ import config
 from handlers.commands import register_command_handlers
 from handlers.groups import register_group_handlers
 from handlers.messages import register_message_handlers
-from services.ai import request_answer
+from services.ai import filter_answer_artifacts, request_answer
 from services.chats import bot_users
 from services.history import get_history
 from tests.helpers import BotTestMixin, Response, Session, make_message
@@ -109,6 +109,27 @@ class MessageTests(BotTestMixin, unittest.IsolatedAsyncioTestCase):
 
 
 class StreamTests(unittest.IsolatedAsyncioTestCase):
+    async def test_extra_marker_removes_duplicate_with_emoji_spacing_changes(self):
+        first = 'слыш 😈 модель опять повторила целый ответ вась 💪 бывает 😂😂'
+        second = first.replace(' 😂😂', '😂')
+        text = first + '</extra?' + second + '</extra?>'
+        response = Response({'choices': [{'message': {'content': text}}]})
+        self.assertEqual(await request_answer('test', Session([response])), first)
+        self.assertEqual(filter_answer_artifacts('ответ</extra?> другой текст'), 'ответ другой текст')
+
+    async def test_extra_marker_split_in_stream_does_not_publish_duplicate(self):
+        answer = 'готовый осмысленный ответ 😈 ' * 4
+        for marker in ('</extra?', '</extra?>'):
+            for split in range(1, len(marker)):
+                chunks = [answer + marker[:split], marker[split:] + answer[:20], answer[20:]]
+                response = Response(lines=[
+                    'data: ' + json.dumps({'choices': [{'delta': {'content': chunk}}]}) for chunk in chunks
+                ] + ['data: [DONE]'])
+                update = AsyncMock()
+                self.assertEqual(await request_answer('test', Session([response]), update_callback=update), answer.strip())
+                for call in update.await_args_list:
+                    self.assertEqual(call.args[0].strip(), answer.strip())
+
     async def test_json_answer_removes_all_markers_and_preserves_surrounding_text(self):
         for marker in ('</формирую_ответ>', '</формируя_ответ>', '</ФОРМИРУЮ_ОТВЕТ>'):
             response = Response({'choices': [{'message': {'content': 'ответ 😈 вась ' + marker + 'correctCorrect' * 100 + marker + ' конец'}}]})
